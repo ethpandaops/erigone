@@ -64,6 +64,10 @@ type StructLogConfig struct {
 //
 //  3. Efficient address extraction: Uses uint256.Bytes20() which returns a fixed
 //     [20]byte array, avoiding big.Int conversion entirely.
+//
+//  4. Inline GasUsed computation: GasUsed is computed during tracing by tracking
+//     gas differences between consecutive opcodes at the same depth. This eliminates
+//     the post-processing pass in execution-processor.
 type StructLogTracer struct {
 	cfg        StructLogConfig
 	logs       []execution.StructLog
@@ -72,13 +76,19 @@ type StructLogTracer struct {
 	env        *tracing.VMContext
 	gasUsed    uint64
 	returnData []byte
+
+	// pendingIdx tracks the index of the pending (last seen) log at each call depth.
+	// Used to compute GasUsed inline: GasUsed = pendingLog.Gas - currentLog.Gas
+	// Index -1 means no pending log at that depth.
+	pendingIdx []int
 }
 
 // NewStructLogTracer creates a new structlog tracer.
 func NewStructLogTracer(cfg StructLogConfig) *StructLogTracer {
 	return &StructLogTracer{
-		cfg:  cfg,
-		logs: make([]execution.StructLog, 0, 256),
+		cfg:        cfg,
+		logs:       make([]execution.StructLog, 0, 256),
+		pendingIdx: make([]int, 0, 16), // EVM max depth is 1024, but 16 is typical
 	}
 }
 
@@ -135,15 +145,25 @@ func isCallOpcode(op vm.OpCode) bool {
 // DELEGATECALL, and CALLCODE opcodes. For all other opcodes (~95% of total),
 // we skip stack processing entirely, eliminating allocations.
 //
+// OPTIMIZATION: Inline GasUsed computation
+// GasUsed is computed as the gas difference between consecutive opcodes at the
+// same depth level. This eliminates the post-processing pass in execution-processor.
+// For opcodes that are last in their call context (before returning to parent),
+// GasCost is used as fallback since we cannot compute across call boundaries.
+//
 // Performance improvement: ~17x faster per opcode, ~99% fewer allocations.
 func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
 	op := vm.OpCode(opcode)
+
+	// Compute GasUsed for the pending log at this depth before adding new log.
+	t.updatePendingGasUsed(depth, gas)
 
 	log := execution.StructLog{
 		PC:      uint32(pc),
 		Op:      opcodeStrings[opcode], // O(1) array lookup vs map lookup
 		Gas:     gas,
 		GasCost: cost,
+		GasUsed: cost, // Default to GasCost; updated by next opcode at same depth
 		Depth:   uint64(depth),
 	}
 
@@ -186,7 +206,39 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 		log.Error = &errStr
 	}
 
+	// Track this log as pending at current depth for GasUsed computation.
+	logIdx := len(t.logs)
 	t.logs = append(t.logs, log)
+	t.setPendingIdx(depth, logIdx)
+}
+
+// updatePendingGasUsed updates the GasUsed field for the pending log at the given depth.
+// GasUsed = pendingLog.Gas - currentGas (the gas consumed by that opcode).
+func (t *StructLogTracer) updatePendingGasUsed(depth int, currentGas uint64) {
+	// Ensure pendingIdx has enough capacity for this depth.
+	for len(t.pendingIdx) <= depth {
+		t.pendingIdx = append(t.pendingIdx, -1)
+	}
+
+	// Clear pending indices for deeper levels (we've returned from those calls).
+	// Those logs keep their GasCost as GasUsed since we can't compute across boundaries.
+	for d := len(t.pendingIdx) - 1; d > depth; d-- {
+		t.pendingIdx[d] = -1
+	}
+
+	// Update GasUsed for pending log at current depth.
+	if prevIdx := t.pendingIdx[depth]; prevIdx >= 0 && prevIdx < len(t.logs) {
+		t.logs[prevIdx].GasUsed = t.logs[prevIdx].Gas - currentGas
+	}
+}
+
+// setPendingIdx sets the pending log index for the given depth.
+func (t *StructLogTracer) setPendingIdx(depth, logIdx int) {
+	for len(t.pendingIdx) <= depth {
+		t.pendingIdx = append(t.pendingIdx, -1)
+	}
+
+	t.pendingIdx[depth] = logIdx
 }
 
 // OnExit is called when execution exits.
