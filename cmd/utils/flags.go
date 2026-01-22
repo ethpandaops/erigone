@@ -271,6 +271,12 @@ var (
 		Usage: "Reporting URL of a ethstats service (nodename:secret@host:port)",
 		Value: "",
 	}
+	// Xatu: Xatu execution processor config
+	XatuConfigFlag = cli.StringFlag{
+		Name:  "xatu.config",
+		Usage: "Path to Xatu execution processor config file",
+		Value: "",
+	}
 	FakePoWFlag = cli.BoolFlag{
 		Name:  "fakepow",
 		Usage: "Disables proof-of-work verification",
@@ -1899,6 +1905,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 
 	cfg.AllowAA = ctx.Bool(AAFlag.Name)
 	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
+
+	// Xatu: Set Xatu execution processor configuration
+	cfg.XatuConfig = ctx.String(XatuConfigFlag.Name)
 
 	if ctx.Bool(ExperimentalConcurrentCommitmentFlag.Name) {
 		// cfg.ExperimentalConcurrentCommitment = true
