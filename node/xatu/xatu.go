@@ -1,0 +1,534 @@
+// Copyright 2024 The Erigon Authors
+// This file is part of Erigon.
+//
+// Erigon is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Erigon is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with Erigon. If not, see <http://www.gnu.org/licenses/>.
+
+// Package xatu implements the Xatu execution processor integration for embedded mode.
+package xatu
+
+import (
+	"context"
+	"fmt"
+	"math/big"
+	"os"
+	"sync"
+	"sync/atomic"
+
+	"github.com/creasty/defaults"
+	"github.com/ethpandaops/execution-processor/pkg/config"
+	"github.com/ethpandaops/execution-processor/pkg/ethereum"
+	"github.com/ethpandaops/execution-processor/pkg/ethereum/execution"
+	"github.com/ethpandaops/execution-processor/pkg/processor"
+	"github.com/ethpandaops/execution-processor/pkg/redis"
+	"github.com/ethpandaops/execution-processor/pkg/state"
+	r "github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
+
+	"github.com/erigontech/erigon/common"
+	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/kv"
+	"github.com/erigontech/erigon/db/rawdb"
+	"github.com/erigontech/erigon/db/services"
+	"github.com/erigontech/erigon/execution/chain"
+	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/protocol/rules"
+	erigonstate "github.com/erigontech/erigon/execution/state"
+	"github.com/erigontech/erigon/execution/vm"
+	"github.com/erigontech/erigon/execution/vm/evmtypes"
+	"github.com/erigontech/erigon/node"
+	"github.com/erigontech/erigon/rpc/transactions"
+)
+
+// Compile-time check that Service implements DataSource interface.
+var _ execution.DataSource = (*Service)(nil)
+
+// Config holds Xatu service configuration.
+type Config struct {
+	ConfigPath string
+}
+
+// Service implements the Xatu execution processor integration.
+// It implements the execution.DataSource interface to provide direct
+// data access without JSON-RPC overhead.
+type Service struct {
+	config      Config
+	db          kv.TemporalRoDB
+	blockReader services.FullBlockReader
+	chainConfig *chain.Config
+	engine      rules.EngineReader
+
+	// execution-processor components
+	embeddedNode *execution.EmbeddedNode
+	pool         *ethereum.Pool
+	manager      *processor.Manager
+	stateManager *state.Manager
+	redisClient  *r.Client
+
+	quitCh chan struct{}
+	wg     sync.WaitGroup
+	log    log.Logger
+	synced atomic.Bool
+}
+
+// New creates and registers the Xatu service with the node.
+func New(
+	n *node.Node,
+	db kv.TemporalRoDB,
+	blockReader services.FullBlockReader,
+	chainConfig *chain.Config,
+	engine rules.EngineReader,
+	config Config,
+	logger log.Logger,
+) error {
+	svc := &Service{
+		config:      config,
+		db:          db,
+		blockReader: blockReader,
+		chainConfig: chainConfig,
+		engine:      engine,
+		quitCh:      make(chan struct{}),
+		log:         logger.New("service", "xatu"),
+	}
+
+	n.RegisterLifecycle(svc)
+
+	return nil
+}
+
+// loadConfig loads the config from file.
+func loadConfig(file string) (*config.Config, error) {
+	cfg := &config.Config{}
+
+	if err := defaults.Set(cfg); err != nil {
+		return nil, err
+	}
+
+	yamlFile, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+
+	type plain config.Config
+
+	if err := yaml.Unmarshal(yamlFile, (*plain)(cfg)); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// Start implements node.Lifecycle, starting the Xatu service.
+func (s *Service) Start() error {
+	// Load config from file
+	cfg, err := loadConfig(s.config.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Create logrus logger for execution-processor (it uses logrus)
+	logrusLog := logrus.New()
+
+	level, err := logrus.ParseLevel(cfg.LoggingLevel)
+	if err != nil {
+		level = logrus.InfoLevel
+	}
+
+	logrusLog.SetLevel(level)
+	fieldLogger := logrusLog.WithField("component", "xatu")
+
+	// Create Redis client
+	if cfg.Redis == nil {
+		return fmt.Errorf("redis configuration is required")
+	}
+
+	s.redisClient, err = redis.New(cfg.Redis)
+	if err != nil {
+		return fmt.Errorf("failed to create redis client: %w", err)
+	}
+
+	// Create state manager
+	ctx := context.Background()
+
+	s.stateManager, err = state.NewManager(ctx, fieldLogger.WithField("component", "state"), &cfg.StateManager)
+	if err != nil {
+		return fmt.Errorf("failed to create state manager: %w", err)
+	}
+
+	// Create embedded node with this service as the DataSource
+	s.embeddedNode = execution.NewEmbeddedNode(fieldLogger.WithField("component", "embedded"), "erigon-embedded", s)
+
+	// Create pool with the embedded node
+	nodes := []execution.Node{s.embeddedNode}
+
+	// Convert config.EthereumConfig to ethereum.Config (same structure)
+	ethConfig := &ethereum.Config{
+		Execution:           cfg.Ethereum.Execution,
+		OverrideNetworkName: cfg.Ethereum.OverrideNetworkName,
+	}
+
+	s.pool = ethereum.NewPoolWithNodes(fieldLogger.WithField("component", "pool"), "xatu", nodes, ethConfig)
+
+	// Create processor manager
+	s.manager, err = processor.NewManager(
+		fieldLogger.WithField("component", "processor"),
+		&cfg.Processors,
+		s.pool,
+		s.stateManager,
+		s.redisClient,
+		cfg.Redis.Prefix,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create processor manager: %w", err)
+	}
+
+	// Start the pool
+	s.pool.Start(ctx)
+
+	// Start the state manager
+	s.wg.Add(1)
+
+	go func() {
+		defer s.wg.Done()
+
+		if err := s.stateManager.Start(ctx); err != nil {
+			s.log.Error("State manager error", "err", err)
+		}
+	}()
+
+	// Start the manager in a goroutine
+	s.wg.Add(1)
+
+	go func() {
+		defer s.wg.Done()
+
+		if err := s.manager.Start(ctx); err != nil {
+			s.log.Error("Execution processor manager error", "err", err)
+		}
+	}()
+
+	s.log.Info("Xatu service started")
+
+	return nil
+}
+
+// Stop implements node.Lifecycle, stopping the Xatu service.
+func (s *Service) Stop() error {
+	close(s.quitCh)
+
+	ctx := context.Background()
+
+	if s.manager != nil {
+		if err := s.manager.Stop(ctx); err != nil {
+			s.log.Warn("Failed to stop execution-processor manager", "err", err)
+		}
+	}
+
+	if s.stateManager != nil {
+		if err := s.stateManager.Stop(ctx); err != nil {
+			s.log.Warn("Failed to stop state manager", "err", err)
+		}
+	}
+
+	if s.pool != nil {
+		if err := s.pool.Stop(ctx); err != nil {
+			s.log.Warn("Failed to stop pool", "err", err)
+		}
+	}
+
+	if s.redisClient != nil {
+		if err := s.redisClient.Close(); err != nil {
+			s.log.Warn("Failed to close redis client", "err", err)
+		}
+	}
+
+	s.wg.Wait()
+	s.log.Info("Xatu service stopped")
+
+	return nil
+}
+
+// SetSynced is called by Erigon when sync completes.
+// This marks the embedded node as ready.
+func (s *Service) SetSynced(synced bool) {
+	wasSynced := s.synced.Swap(synced)
+	if synced && !wasSynced && s.embeddedNode != nil {
+		ctx := context.Background()
+		if err := s.embeddedNode.MarkReady(ctx); err != nil {
+			s.log.Error("Failed to mark embedded node as ready", "err", err)
+		} else {
+			s.log.Info("EmbeddedNode marked as ready")
+		}
+	}
+}
+
+// BlockNumber returns the current block number.
+func (s *Service) BlockNumber(ctx context.Context) (*uint64, error) {
+	tx, err := s.db.BeginTemporalRo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	block, err := s.blockReader.CurrentBlock(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current block: %w", err)
+	}
+
+	if block == nil {
+		return nil, nil
+	}
+
+	num := block.NumberU64()
+
+	return &num, nil
+}
+
+// BlockByNumber returns the block at the given number.
+func (s *Service) BlockByNumber(ctx context.Context, number *big.Int) (execution.Block, error) {
+	tx, err := s.db.BeginTemporalRo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	block, err := s.blockReader.BlockByNumber(ctx, tx, number.Uint64())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block %d: %w", number, err)
+	}
+
+	if block == nil {
+		return nil, nil
+	}
+
+	return newBlockAdapter(block, s.chainConfig), nil
+}
+
+// BlockReceipts returns all receipts for the block at the given number.
+func (s *Service) BlockReceipts(ctx context.Context, number *big.Int) ([]execution.Receipt, error) {
+	tx, err := s.db.BeginTemporalRo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	block, err := s.blockReader.BlockByNumber(ctx, tx, number.Uint64())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block %d: %w", number, err)
+	}
+
+	if block == nil {
+		return nil, nil
+	}
+
+	txNumReader := s.blockReader.TxnumReader()
+
+	receipts, err := rawdb.ReadReceiptsCacheV2(tx, block, txNumReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receipts for block %d: %w", number, err)
+	}
+
+	return adaptReceipts(receipts), nil
+}
+
+// TransactionReceipt returns the receipt for the transaction with the given hash.
+func (s *Service) TransactionReceipt(ctx context.Context, hash string) (execution.Receipt, error) {
+	tx, err := s.db.BeginTemporalRo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	txHash := common.HexToHash(hash)
+
+	blockNum, txNum, ok, err := s.blockReader.TxnLookup(ctx, tx, txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup transaction: %w", err)
+	}
+
+	if !ok {
+		return nil, nil
+	}
+
+	block, err := s.blockReader.BlockByNumber(ctx, tx, blockNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block %d: %w", blockNum, err)
+	}
+
+	if block == nil {
+		return nil, nil
+	}
+
+	txNumReader := s.blockReader.TxnumReader()
+
+	receipts, err := rawdb.ReadReceiptsCacheV2(tx, block, txNumReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get receipts for block %d: %w", blockNum, err)
+	}
+
+	// Calculate txIndex from txNum
+	txNumMin, err := txNumReader.Min(ctx, tx, blockNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get min txNum: %w", err)
+	}
+
+	if txNumMin+1 > txNum {
+		return nil, fmt.Errorf("txNum underflow: txNum=%d, txNumMin=%d", txNum, txNumMin)
+	}
+
+	txIndex := int(txNum - txNumMin - 1)
+	if txIndex >= len(receipts) {
+		return nil, fmt.Errorf("transaction index %d out of range", txIndex)
+	}
+
+	return newReceiptAdapter(receipts[txIndex]), nil
+}
+
+// DebugTraceTransaction returns the execution trace for the transaction.
+func (s *Service) DebugTraceTransaction(
+	ctx context.Context,
+	hash string,
+	blockNumber *big.Int,
+	opts execution.TraceOptions,
+) (*execution.TraceTransaction, error) {
+	tx, err := s.db.BeginTemporalRo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	txHash := common.HexToHash(hash)
+
+	blockNum, txNum, ok, err := s.blockReader.TxnLookup(ctx, tx, txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup transaction: %w", err)
+	}
+
+	if !ok {
+		return nil, fmt.Errorf("transaction %s not found", hash)
+	}
+
+	txNumReader := s.blockReader.TxnumReader()
+
+	// Calculate txIndex from txNum
+	txNumMin, err := txNumReader.Min(ctx, tx, blockNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get min txNum: %w", err)
+	}
+
+	if txNumMin+1 > txNum {
+		return nil, fmt.Errorf("txNum underflow: txNum=%d, txNumMin=%d", txNum, txNumMin)
+	}
+
+	txIndex := int(txNum - txNumMin - 1)
+
+	// Get block
+	block, err := s.blockReader.BlockByNumber(ctx, tx, blockNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block %d: %w", blockNum, err)
+	}
+
+	if block == nil {
+		return nil, fmt.Errorf("block %d not found", blockNum)
+	}
+
+	header := block.Header()
+
+	// Compute block context
+	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
+		ctx, s.engine, header, s.chainConfig, s.blockReader, nil, txNumReader, tx, txIndex,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute block context: %w", err)
+	}
+
+	// Compute tx context
+	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, s.chainConfig, txIndex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute tx context: %w", err)
+	}
+
+	// Create structlog tracer
+	tracer := NewStructLogTracer(StructLogConfig{
+		DisableStorage:   opts.DisableStorage,
+		DisableStack:     opts.DisableStack,
+		DisableMemory:    opts.DisableMemory,
+		EnableReturnData: opts.EnableReturnData,
+	})
+
+	// Execute transaction with tracing
+	result, err := s.executeWithTracer(statedb, blockCtx, txCtx, msg, tracer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute transaction: %w", err)
+	}
+
+	// Build trace result
+	trace := tracer.GetTraceTransaction()
+	trace.Gas = result.GasUsed
+	trace.Failed = result.Err != nil
+
+	if len(result.ReturnData) > 0 {
+		returnValue := common.Bytes2Hex(result.ReturnData)
+		trace.ReturnValue = &returnValue
+	}
+
+	return trace, nil
+}
+
+// ChainID returns the chain ID.
+func (s *Service) ChainID() int32 {
+	if s.chainConfig.ChainID != nil {
+		return int32(s.chainConfig.ChainID.Int64())
+	}
+
+	return 1
+}
+
+// ClientType returns the client type/version string.
+func (s *Service) ClientType() string {
+	return "erigon"
+}
+
+// IsSynced returns true if the data source is fully synced.
+func (s *Service) IsSynced() bool {
+	return s.synced.Load()
+}
+
+// executeWithTracer executes a transaction with the given tracer.
+func (s *Service) executeWithTracer(
+	statedb *erigonstate.IntraBlockState,
+	blockCtx evmtypes.BlockContext,
+	txCtx evmtypes.TxContext,
+	msg protocol.Message,
+	tracer *StructLogTracer,
+) (*evmtypes.ExecutionResult, error) {
+	// Set tracer hooks on state
+	statedb.SetHooks(tracer.Hooks())
+
+	// Create EVM with tracer
+	evm := vm.NewEVM(blockCtx, txCtx, statedb, s.chainConfig, vm.Config{
+		Tracer:    tracer.Hooks(),
+		NoBaseFee: true,
+	})
+
+	// Execute
+	gp := new(protocol.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
+
+	result, err := protocol.ApplyMessage(evm, msg, gp, true, false, s.engine)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

@@ -243,6 +243,8 @@ type Config struct {
 
 	// Ethstats service
 	Ethstats string
+	// Xatu: Xatu execution processor config path
+	XatuConfig string
 	// Consensus layer
 	InternalCL bool
 
