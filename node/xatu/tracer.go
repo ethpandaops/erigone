@@ -51,6 +51,12 @@ type StructLogConfig struct {
 	EnableReturnData bool
 }
 
+// pendingCreate tracks a CREATE/CREATE2 opcode waiting for its result address.
+type pendingCreate struct {
+	logIndex int // Index into logs slice
+	depth    int // Depth at which CREATE was executed
+}
+
 // StructLogTracer captures structlog traces for execution-processor.
 //
 // OPTIMIZATION NOTES:
@@ -70,6 +76,10 @@ type StructLogConfig struct {
 //  4. Inline GasUsed computation: GasUsed is computed during tracing by tracking
 //     gas differences between consecutive opcodes at the same depth. This eliminates
 //     the post-processing pass in execution-processor.
+//
+//  5. Inline CREATE address resolution: CREATE/CREATE2 addresses are resolved when
+//     the constructor returns, extracting the result from the stack. This eliminates
+//     the multi-pass ComputeCreateAddresses() scan in execution-processor.
 type StructLogTracer struct {
 	cfg        StructLogConfig
 	logs       []execution.StructLog
@@ -83,14 +93,19 @@ type StructLogTracer struct {
 	// Used to compute GasUsed inline: GasUsed = pendingLog.Gas - currentLog.Gas
 	// Index -1 means no pending log at that depth.
 	pendingIdx []int
+
+	// pendingCreates tracks CREATE/CREATE2 opcodes waiting for their result address.
+	// When execution returns to the CREATE's depth, the created address is on the stack.
+	pendingCreates []pendingCreate
 }
 
 // NewStructLogTracer creates a new structlog tracer.
 func NewStructLogTracer(cfg StructLogConfig) *StructLogTracer {
 	return &StructLogTracer{
-		cfg:        cfg,
-		logs:       make([]execution.StructLog, 0, 256),
-		pendingIdx: make([]int, 0, 16), // EVM max depth is 1024, but 16 is typical
+		cfg:            cfg,
+		logs:           make([]execution.StructLog, 0, 256),
+		pendingIdx:     make([]int, 0, 16), // EVM max depth is 1024, but 16 is typical
+		pendingCreates: nil,
 	}
 }
 
@@ -137,6 +152,11 @@ func isCallOpcode(op vm.OpCode) bool {
 	}
 }
 
+// isCreateOpcode checks if the opcode is CREATE or CREATE2.
+func isCreateOpcode(op vm.OpCode) bool {
+	return op == vm.CREATE || op == vm.CREATE2
+}
+
 // OnOpcode captures each EVM opcode execution.
 //
 // OPTIMIZATION: Conditional stack capture
@@ -159,6 +179,11 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 
 	// Compute GasUsed for the pending log at this depth before adding new log.
 	t.updatePendingGasUsed(depth, gas)
+
+	// Resolve any pending CREATEs that have completed.
+	// When execution returns to the CREATE's depth (or lower), the created address
+	// is at the top of the current opcode's stack.
+	t.resolvePendingCreates(depth, scope)
 
 	log := execution.StructLog{
 		PC:      uint32(pc),
@@ -212,6 +237,15 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 	logIdx := len(t.logs)
 	t.logs = append(t.logs, log)
 	t.setPendingIdx(depth, logIdx)
+
+	// Track CREATE/CREATE2 opcodes for address resolution.
+	// The created address will be extracted when execution returns to this depth.
+	if isCreateOpcode(op) {
+		t.pendingCreates = append(t.pendingCreates, pendingCreate{
+			logIndex: logIdx,
+			depth:    depth,
+		})
+	}
 }
 
 // updatePendingGasUsed updates the GasUsed field for the pending log at the given depth.
@@ -241,6 +275,31 @@ func (t *StructLogTracer) setPendingIdx(depth, logIdx int) {
 	}
 
 	t.pendingIdx[depth] = logIdx
+}
+
+// resolvePendingCreates resolves any pending CREATE/CREATE2 opcodes that have completed.
+// When execution returns to the CREATE's depth (or lower), the created address (or 0 on
+// failure) is at the top of the current opcode's stack.
+func (t *StructLogTracer) resolvePendingCreates(currentDepth int, scope tracing.OpContext) {
+	for len(t.pendingCreates) > 0 {
+		last := t.pendingCreates[len(t.pendingCreates)-1]
+
+		// CREATE completes when we see an opcode at the same depth or lower.
+		if currentDepth <= last.depth {
+			// Extract created address from top of stack.
+			stack := scope.StackData()
+			if len(stack) > 0 {
+				addr := &stack[len(stack)-1]
+				addrBytes := addr.Bytes20()
+				addrStr := "0x" + hex.EncodeToString(addrBytes[:])
+				t.logs[last.logIndex].CallToAddress = &addrStr
+			}
+
+			t.pendingCreates = t.pendingCreates[:len(t.pendingCreates)-1]
+		} else {
+			break
+		}
+	}
 }
 
 // OnExit is called when execution exits.

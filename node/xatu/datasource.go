@@ -73,7 +73,7 @@ func (s *Service) BlockByNumber(ctx context.Context, number *big.Int) (execution
 	}
 
 	if block == nil {
-		return nil, nil
+		return nil, fmt.Errorf("block %d not found", number)
 	}
 
 	return newBlockAdapter(block, s.chainConfig), nil
@@ -93,7 +93,7 @@ func (s *Service) BlockReceipts(ctx context.Context, number *big.Int) ([]executi
 	}
 
 	if block == nil {
-		return nil, nil
+		return nil, fmt.Errorf("block %d not found", number)
 	}
 
 	txNumReader := s.blockReader.TxnumReader()
@@ -131,7 +131,7 @@ func (s *Service) TransactionReceipt(ctx context.Context, hash string) (executio
 	}
 
 	if block == nil {
-		return nil, nil
+		return nil, fmt.Errorf("block %d not found for transaction %s", blockNum, hash)
 	}
 
 	txNumReader := s.blockReader.TxnumReader()

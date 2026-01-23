@@ -45,6 +45,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/elastic/go-freelru v0.16.0
 	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab
+	github.com/ethpandaops/execution-processor v0.1.5-0.20260123064157-e3bc1c94e6d7
 	github.com/felixge/fgprof v0.9.5
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
@@ -187,7 +188,6 @@ require (
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
 	github.com/ethereum/go-ethereum v1.16.7 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
-	github.com/ethpandaops/execution-processor v0.1.5-0.20260123043416-0f7509bbffff // indirect
 	github.com/fjl/gencodec v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
@@ -217,7 +217,6 @@ require (
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/lib/pq v1.10.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
