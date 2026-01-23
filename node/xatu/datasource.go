@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build embedded
+
 package xatu
 
 import (
@@ -249,9 +251,9 @@ func (s *Service) DebugTraceTransaction(
 }
 
 // ChainID returns the chain ID.
-func (s *Service) ChainID() int32 {
+func (s *Service) ChainID() int64 {
 	if s.chainConfig.ChainID != nil {
-		return int32(s.chainConfig.ChainID.Int64())
+		return s.chainConfig.ChainID.Int64()
 	}
 
 	return 1

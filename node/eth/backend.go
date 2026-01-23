@@ -114,7 +114,6 @@ import (
 	"github.com/erigontech/erigon/node/rulesconfig"
 	"github.com/erigontech/erigon/node/shards"
 	"github.com/erigontech/erigon/node/silkworm"
-	"github.com/erigontech/erigon/node/xatu"
 	"github.com/erigontech/erigon/p2p"
 	"github.com/erigontech/erigon/p2p/enode"
 	"github.com/erigontech/erigon/p2p/protocols/eth"
@@ -1153,12 +1152,9 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig 
 		}
 	}
 
-	// Xatu: Initialize Xatu service if configured
+	// Xatu: Initialize Xatu service if configured (requires -tags embedded)
 	if config.XatuConfig != "" {
-		xatuConfig := xatu.Config{
-			ConfigPath: config.XatuConfig,
-		}
-		if err := xatu.New(stack, chainKv, s.blockReader, chainConfig, s.engine, xatuConfig, s.logger); err != nil {
+		if err := initXatu(stack, chainKv, s.blockReader, chainConfig, s.engine, config.XatuConfig, s.logger); err != nil {
 			return err
 		}
 	}
