@@ -356,6 +356,10 @@ github.com/ethereum/go-ethereum v1.16.7 h1:qeM4TvbrWK0UC0tgkZ7NiRsmBGwsjqc64BHo2
 github.com/ethereum/go-ethereum v1.16.7/go.mod h1:Fs6QebQbavneQTYcA39PEKv2+zIjX7rPUZ14DER46wk=
 github.com/ethereum/go-verkle v0.2.2 h1:I2W0WjnrFUIzzVPwm8ykY+7pL2d4VhlsePn4j7cnFk8=
 github.com/ethereum/go-verkle v0.2.2/go.mod h1:M3b90YRnzqKyyzBEWJGqj8Qff4IDeXnzFw0P9bFw3uk=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260123011800-c583e0a9770f h1:RelMo8BZlA/OGEm2xKu+1QH7ADXfpXgY/w9uuRTLc/o=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260123011800-c583e0a9770f/go.mod h1:PQEmGI03i4PrWXAkVn9DPE13F+NjNKMMNk7QVFmA8vQ=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260123043416-0f7509bbffff h1:WK+2njWBW/ph6hBBpwsVKo1DKyL9qFRZhIl6JKRmxco=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260123043416-0f7509bbffff/go.mod h1:PQEmGI03i4PrWXAkVn9DPE13F+NjNKMMNk7QVFmA8vQ=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/felixge/fgprof v0.9.5 h1:8+vR6yu2vvSKn08urWyEuxx75NWPEvybbkBirEpsbVY=
@@ -649,6 +653,8 @@ github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+
 github.com/leanovate/gopter v0.2.11 h1:vRjThO1EKPb/1NsDXuDrzldR28RLkBflWYcU9CvzWu4=
 github.com/leanovate/gopter v0.2.11/go.mod h1:aK3tzZP/C+p1m3SPRE4SYZFGP7jjkuSI4f7Xvpt0S9c=
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
+github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
+github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/libp2p/go-buffer-pool v0.1.0 h1:oK4mSFcQz7cTQIfqbe4MIj9gLW+mnanjyFtc6cdF0Y8=
 github.com/libp2p/go-buffer-pool v0.1.0/go.mod h1:N+vh8gMqimBzdKkSMVuydVDq+UV5QTWy5HSiZacSbPg=
 github.com/libp2p/go-flow-metrics v0.2.0 h1:EIZzjmeOE6c8Dav0sNv35vhZxATIXWZg6j/C08XmmDw=

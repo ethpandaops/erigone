@@ -209,6 +209,12 @@ func (s *Service) Start() error {
 		}
 	}()
 
+	// Mark the embedded node as ready - the DataSource can serve requests immediately.
+	// Processing will naturally only process blocks that exist.
+	if err := s.embeddedNode.MarkReady(ctx); err != nil {
+		return fmt.Errorf("failed to mark embedded node as ready: %w", err)
+	}
+
 	s.log.Info("Xatu service started")
 
 	return nil

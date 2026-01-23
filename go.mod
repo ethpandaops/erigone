@@ -6,15 +6,12 @@ replace github.com/holiman/bloomfilter/v2 => github.com/AskAlexSharov/bloomfilte
 
 replace github.com/crate-crypto/go-eth-kzg => github.com/Giulio2002/zero-alloc-go-eth-kzg v0.0.0-20260105034637-43cb6f34f8e0
 
-replace github.com/ethpandaops/execution-processor => ../execution-processor
-
 require (
 	github.com/erigontech/erigon-snapshot v1.3.1-0.20260105114333-2f59a10db72b
 	github.com/erigontech/erigonwatch v0.0.0-20240718131902-b6576bde1116
 	github.com/erigontech/mdbx-go v0.39.12
 	github.com/erigontech/secp256k1 v1.2.0
 	github.com/erigontech/silkworm-go v0.24.0
-	github.com/ethpandaops/execution-processor v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -190,6 +187,7 @@ require (
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
 	github.com/ethereum/go-ethereum v1.16.7 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
+	github.com/ethpandaops/execution-processor v0.1.5-0.20260123043416-0f7509bbffff // indirect
 	github.com/fjl/gencodec v0.1.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
@@ -219,6 +217,7 @@ require (
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
