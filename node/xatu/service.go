@@ -152,7 +152,7 @@ func (s *Service) Start() error {
 	// Create state manager
 	ctx := context.Background()
 
-	s.stateManager, err = state.NewManager(ctx, fieldLogger.WithField("component", "state"), &cfg.StateManager)
+	s.stateManager, err = state.NewManager(fieldLogger.WithField("component", "state"), &cfg.StateManager)
 	if err != nil {
 		return fmt.Errorf("failed to create state manager: %w", err)
 	}
