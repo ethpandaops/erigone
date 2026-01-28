@@ -1,0 +1,129 @@
+## ethpandaops/erigone Docker image
+## Based on upstream Dockerfile with embedded xatu tracing support
+##
+## Build:
+##   docker build -f Dockerfile.ethpandaops -t ethpandaops/erigone:latest .
+##
+## Multi-arch build:
+##   docker buildx build -f Dockerfile.ethpandaops --platform linux/amd64,linux/arm64 -t ethpandaops/erigone:latest .
+
+ARG BUILDER_IMAGE="golang:1.25.4-bookworm" \
+    TARGET_BASE_IMAGE="debian:bookworm-slim" \
+    BINARIES="erigon" \
+    BUILD_DATE="Not defined" \
+    VCS_REF="Not defined" \
+    VERSION="dev" \
+    UID_ERIGON=1000 \
+    GID_ERIGON=1000 \
+    EXPOSED_PORTS="8545 \
+       8551 \
+       8546 \
+       30303 \
+       30303/udp \
+       42069 \
+       42069/udp \
+       8080 \
+       9090 \
+       6060"
+
+## Use xx - Dockerfile cross-compilation helpers
+FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+
+### Erigon Builder section:
+FROM --platform=$BUILDPLATFORM ${BUILDER_IMAGE} AS builder
+ARG TARGETARCH \
+    TARGETVARIANT \
+    TARGETPLATFORM \
+    BINARIES \
+    VERSION \
+    VCS_REF
+
+SHELL ["/bin/bash", "-c"]
+
+WORKDIR /erigon
+
+## Copy all content of helpers:
+COPY --from=xx / /
+
+COPY go.mod go.sum /erigon/
+
+## Make sure required dependencies are installed (some packages required only for arm64):
+RUN xx-apt-get install -y libc6-dev g++ && \
+    xx-go mod download && \
+    xx-go mod tidy
+
+COPY . /erigon/
+
+RUN echo "DEBUG: building on ${TARGETARCH}${TARGETVARIANT}" && \
+    if [ "x${TARGETARCH}" == "xamd64" ] && [ "x${TARGETVARIANT}" == "x" ]; then \
+        echo "DEBUG: detected architecture AMD64v1"; \
+        export CPU_FLAGS="GOAMD64_VERSION=v1 GOARCH=amd64"; \
+    elif [ "x${TARGETARCH}" == "xamd64" ] && [ "x${TARGETVARIANT}" == "xv2" ]; then \
+        echo "DEBUG: detected architecture AMD64v2"; \
+        export CPU_FLAGS="GOAMD64_VERSION=v2 GOARCH=amd64"; \
+    elif [ "x${TARGETARCH}" == "xarm64" ]; then \
+        echo "DEBUG: detected architecture ARM64"; \
+        export CPU_FLAGS="GOARCH=arm64"; \
+    fi && \
+    echo "DEBUG: cmd - make ${CPU_FLAGS} ${BINARIES} GOBIN=/build BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm" && \
+    make GO=xx-go CGO_ENABLED=1 GOARCH=${TARGETARCH} ${CPU_FLAGS} ${BINARIES} GOBIN=/build \
+        BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm \
+        GIT_COMMIT=${VCS_REF} \
+        GIT_TAG=${VERSION} && \
+    find /build -ls
+
+### End of builder section
+
+
+### Erigon Target section:
+FROM ${TARGET_BASE_IMAGE} AS erigon
+ARG USER=erigon \
+    GROUP=erigon \
+    UID_ERIGON \
+    GID_ERIGON \
+    TARGETARCH \
+    TARGET_BASE_IMAGE \
+    EXPOSED_PORTS \
+    BUILD_DATE \
+    VCS_REF \
+    VERSION
+
+LABEL \
+    "org.opencontainers.image.authors"="https://github.com/ethpandaops" \
+    "org.opencontainers.image.base.name"="${TARGET_BASE_IMAGE}" \
+    "org.opencontainers.image.created"="${BUILD_DATE}" \
+    "org.opencontainers.image.revision"="${VCS_REF}" \
+    "org.opencontainers.image.version"="${VERSION}" \
+    "org.opencontainers.image.description"="Erigone - ethpandaops fork of Erigon with embedded xatu tracing" \
+    "org.opencontainers.image.documentation"="https://github.com/ethpandaops/erigone" \
+    "org.opencontainers.image.source"="https://github.com/ethpandaops/erigone" \
+    "org.opencontainers.image.url"="https://github.com/ethpandaops/erigone"
+
+STOPSIGNAL 2
+
+SHELL ["/bin/bash", "-c"]
+
+RUN --mount=type=bind,from=builder,source=/build,target=/tmp/build \
+    echo Installing on ${TARGETARCH} with variant ${TARGETVARIANT} && \
+    groupadd --gid ${GID_ERIGON} ${GROUP} && \
+    useradd --system --uid ${UID_ERIGON} -g ${GROUP} --home /home/${USER} --shell /bin/bash ${USER} && \
+    apt update -y && \
+    apt install -y --no-install-recommends ca-certificates && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    install -d -o ${USER} -g ${GROUP} /home/${USER}/.local /home/${USER}/.local/share /home/${USER}/.local/share/erigon && \
+    echo "Installing all binaries:" && \
+    shopt -s extglob && \
+    for binary in '/tmp/build/!(*.so)'; do \
+        install -v -o root -g root $binary /usr/local/bin/ ; \
+    done
+
+VOLUME [ "/home/${USER}" ]
+WORKDIR /home/${USER}
+
+USER ${USER}
+
+EXPOSE ${EXPOSED_PORTS}
+
+ENTRYPOINT [ "/usr/local/bin/erigon" ]
+### End of Erigon Target section
