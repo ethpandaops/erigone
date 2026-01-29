@@ -341,18 +341,30 @@ func TestCallGasCostUnderflow(t *testing.T) {
 	t.Logf("CALL opcode: gas=%d, gasCost=%d (0x%x)", callLog.Gas, callLog.GasCost, callLog.GasCost)
 
 	// The bug: gasCost is corrupted due to underflow in callGas()
-	// A reasonable gasCost for a failed CALL should be < 30 million (block gas limit)
-	// The corrupted value is ~18 * 10^18 (close to 2^64)
-	const maxReasonableGasCost = 30_000_000
+	//
+	// Detection: The underflow produces values close to 2^64 (~18 quintillion).
+	// Any gasCost > 2^60 is definitely corrupted - no legitimate gas cost approaches
+	// 1 exagas. This threshold is robust against any future block gas limit changes.
+	//
+	// Note: gasCost > gas is also technically invalid (you can't consume more than
+	// you have), but Erigon returns computed base costs even for failed CALLs.
+	// Reth instead returns gasCost = gas (all available gas consumed).
+	const corruptionThreshold = uint64(1) << 60 // ~1.15 * 10^18
 
-	if callLog.GasCost > maxReasonableGasCost {
-		t.Errorf("BUG DETECTED: CALL gasCost is corrupted!\n"+
-			"  gasCost = %d (0x%x)\n"+
-			"  This is caused by underflow in gas.go:callGas() when availableGas < base\n"+
-			"  Expected gasCost < %d",
-			callLog.GasCost, callLog.GasCost, maxReasonableGasCost)
+	if callLog.GasCost > corruptionThreshold {
+		t.Errorf("BUG DETECTED: CALL gasCost is corrupted due to underflow!\n"+
+			"  gas (available) = %d\n"+
+			"  gasCost         = %d (0x%x)\n"+
+			"  threshold       = %d (2^60)\n"+
+			"  This is caused by underflow in gas.go:callGas() when availableGas < base",
+			callLog.Gas, callLog.GasCost, callLog.GasCost, corruptionThreshold)
 	} else {
-		t.Logf("CALL gasCost = %d (reasonable)", callLog.GasCost)
+		t.Logf("CALL gasCost = %d (not corrupted)", callLog.GasCost)
+		// Additional info: check if gasCost exceeds available gas
+		if callLog.GasCost > callLog.Gas {
+			t.Logf("  Note: gasCost (%d) > gas (%d) - Erigon returns computed cost, Reth would return %d",
+				callLog.GasCost, callLog.Gas, callLog.Gas)
+		}
 	}
 }
 
