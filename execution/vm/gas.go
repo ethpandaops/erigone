@@ -39,6 +39,10 @@ const (
 // As part of EIP 150 (TangerineWhistle), the returned gas is gas - base * 63 / 64.
 func callGas(isEip150 bool, availableGas, base uint64, callCost *uint256.Int) (uint64, error) {
 	if isEip150 {
+		// Guard against underflow: if availableGas < base, no gas can be passed to the child call
+		if availableGas < base {
+			return 0, nil
+		}
 		availableGas = availableGas - base
 		gas := availableGas - availableGas/64
 		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150

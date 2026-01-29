@@ -194,6 +194,13 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 		Depth:   uint64(depth),
 	}
 
+	// Sanitize gasCost: it can never legitimately exceed available gas.
+	// This guards against Erigon's unsigned integer underflow bug in gas.go:callGas()
+	// where availableGas - base underflows when availableGas < base.
+	if log.GasCost > log.Gas {
+		log.GasCost = log.Gas
+	}
+
 	// OPTIMIZATION: Extract only CallToAddress for CALL-family opcodes.
 	// This replaces full stack capture which allocated 3 objects per stack item.
 	//

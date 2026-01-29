@@ -28,6 +28,79 @@ import (
 )
 
 // =============================================================================
+// StructLogTracer Unit Tests
+// =============================================================================
+
+// TestGasCostSanitization verifies that corrupted gasCost values from
+// Erigon's unsigned integer underflow bug are sanitized.
+//
+// The bug: In gas.go:callGas(), `availableGas - base` underflows when
+// availableGas < base, producing values close to 2^64.
+//
+// The fix: gasCost is capped at available gas (you can't consume more
+// than you have).
+func TestGasCostSanitization(t *testing.T) {
+	tests := []struct {
+		name            string
+		gas             uint64
+		cost            uint64 // gasCost from EVM
+		expectedGasCost uint64
+	}{
+		{
+			name:            "normal opcode - no change",
+			gas:             10000,
+			cost:            3,
+			expectedGasCost: 3,
+		},
+		{
+			name:            "CALL opcode - no change",
+			gas:             319945,
+			cost:            314987,
+			expectedGasCost: 314987,
+		},
+		{
+			name:            "corrupted from underflow bug",
+			gas:             5058,
+			cost:            18158513697557845033, // Actual corrupted value
+			expectedGasCost: 5058,                 // Sanitized to available gas
+		},
+		{
+			name:            "max uint64 corrupted",
+			gas:             1000,
+			cost:            ^uint64(0),
+			expectedGasCost: 1000,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer := NewStructLogTracer(StructLogConfig{})
+			ctx := newMockOpContext(10)
+
+			tracer.OnOpcode(
+				0,             // pc
+				byte(vm.CALL), // opcode
+				tc.gas,        // gas
+				tc.cost,       // cost (potentially corrupted)
+				ctx,           // scope
+				nil,           // rData
+				1,             // depth
+				nil,           // err
+			)
+
+			logs := tracer.StructLogs()
+			if len(logs) != 1 {
+				t.Fatalf("expected 1 log, got %d", len(logs))
+			}
+
+			if logs[0].GasCost != tc.expectedGasCost {
+				t.Errorf("GasCost = %d, want %d", logs[0].GasCost, tc.expectedGasCost)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // StructLogTracer Benchmarks
 // =============================================================================
 //
