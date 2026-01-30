@@ -382,8 +382,8 @@ github.com/ethereum/go-ethereum v1.16.7 h1:qeM4TvbrWK0UC0tgkZ7NiRsmBGwsjqc64BHo2
 github.com/ethereum/go-ethereum v1.16.7/go.mod h1:Fs6QebQbavneQTYcA39PEKv2+zIjX7rPUZ14DER46wk=
 github.com/ethereum/go-verkle v0.2.2 h1:I2W0WjnrFUIzzVPwm8ykY+7pL2d4VhlsePn4j7cnFk8=
 github.com/ethereum/go-verkle v0.2.2/go.mod h1:M3b90YRnzqKyyzBEWJGqj8Qff4IDeXnzFw0P9bFw3uk=
-github.com/ethpandaops/execution-processor v0.1.5-0.20260130091418-f92bc2731629 h1:JU5oIkN6hhOTJ2vsZvYXbzY4+y5GuEra2qUCT9Vv8I0=
-github.com/ethpandaops/execution-processor v0.1.5-0.20260130091418-f92bc2731629/go.mod h1:P9jKqsxX+a5qLdEzd+FJpKEZDQHw4kLo7pfXIR2CaME=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260130153215-e153de12b99a h1:kL1FjDqdQVpdZn04cdW5qqcczSqTTqirjyFbX4k+dMk=
+github.com/ethpandaops/execution-processor v0.1.5-0.20260130153215-e153de12b99a/go.mod h1:P9jKqsxX+a5qLdEzd+FJpKEZDQHw4kLo7pfXIR2CaME=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/felixge/fgprof v0.9.5 h1:8+vR6yu2vvSKn08urWyEuxx75NWPEvybbkBirEpsbVY=
