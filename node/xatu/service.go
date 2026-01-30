@@ -67,10 +67,11 @@ type Service struct {
 	stateManager *state.Manager
 	redisClient  *r.Client
 
-	quitCh chan struct{}
-	wg     sync.WaitGroup
-	log    log.Logger
-	synced atomic.Bool
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+	wg        sync.WaitGroup
+	log       log.Logger
+	synced    atomic.Bool
 }
 
 // New creates and registers the Xatu service with the node.
@@ -89,7 +90,6 @@ func New(
 		blockReader: blockReader,
 		chainConfig: chainConfig,
 		engine:      engine,
-		quitCh:      make(chan struct{}),
 		log:         logger.New("service", "xatu"),
 	}
 
@@ -149,8 +149,9 @@ func (s *Service) Start() error {
 		return fmt.Errorf("failed to create redis client: %w", err)
 	}
 
-	// Create state manager
-	ctx := context.Background()
+	// Create cancellable context for lifecycle management
+	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
+	ctx := s.ctx
 
 	s.stateManager, err = state.NewManager(fieldLogger.WithField("component", "state"), &cfg.StateManager)
 	if err != nil {
@@ -222,7 +223,10 @@ func (s *Service) Start() error {
 
 // Stop implements node.Lifecycle, stopping the Xatu service.
 func (s *Service) Stop() error {
-	close(s.quitCh)
+	// Cancel the context to signal all goroutines to stop
+	if s.ctxCancel != nil {
+		s.ctxCancel()
+	}
 
 	ctx := context.Background()
 
