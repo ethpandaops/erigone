@@ -45,7 +45,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/elastic/go-freelru v0.16.0
 	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab
-	github.com/ethpandaops/execution-processor v0.1.5-0.20260130153215-e153de12b99a
+	github.com/ethpandaops/execution-processor v0.1.5-0.20260131034043-5bc68cd04eaf
 	github.com/felixge/fgprof v0.9.5
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
