@@ -178,6 +178,8 @@ var DefaultFlags = []cli.Flag{
 	&utils.BorBlockSizeFlag,
 	&utils.AAFlag,
 	&utils.EthStatsURLFlag,
+	// Xatu: Xatu execution processor flag
+	&utils.XatuConfigFlag,
 	&utils.OverrideOsakaFlag,
 	&utils.OverrideAmsterdamFlag,
 	&utils.KeepStoredChainConfigFlag,

@@ -1148,6 +1148,13 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig 
 		}
 	}
 
+	// Xatu: Initialize Xatu service if configured (requires -tags embedded)
+	if config.XatuConfig != "" {
+		if err := initXatu(stack, chainKv, s.blockReader, chainConfig, s.engine, config.XatuConfig, s.logger); err != nil {
+			return err
+		}
+	}
+
 	s.apiList = jsonrpc.APIList(chainKv, s.ethRpcClient, s.txPoolRpcClient, s.miningRpcClient, s.rpcFilters, s.rpcDaemonStateCache, blockReader, &httpRpcCfg, s.engine, s.logger, s.polygonBridge, s.heimdallService)
 
 	if config.SilkwormRpcDaemon && httpRpcCfg.Enabled {
