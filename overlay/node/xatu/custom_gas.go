@@ -31,88 +31,49 @@ type CustomGasSchedule struct {
 	Overrides map[string]uint64 `json:"overrides,omitempty"`
 }
 
-// GasScheduleForRules returns a CustomGasSchedule with default values
-// appropriate for the given chain rules/fork.
-// Values are extracted directly from the fork's JumpTable to ensure accuracy.
-// All valid opcodes for the fork are included automatically - no manual list to maintain.
+// GasScheduleForRules returns default gas values for a fork (for API display only).
+// Execution uses patched gas functions with hardcoded fallbacks via GetOr().
 func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
-	schedule := &CustomGasSchedule{
-		Overrides: make(map[string]uint64),
-	}
+	schedule := &CustomGasSchedule{Overrides: make(map[string]uint64)}
 
-	// Get the JumpTable for this fork - this gives us accurate gas costs
+	// Constant gas from JumpTable (valid opcodes for this fork)
 	jt := vm.GetBaseJumpTable(rules)
-
-	// Extract constant gas costs from the JumpTable for ALL opcodes
-	// This automatically includes only opcodes valid for this fork
 	for i := 0; i < 256; i++ {
 		opcode := vm.OpCode(i)
-		op := jt[opcode]
-		if op != nil {
-			gas := op.GetConstantGas()
-			// Include if gas > 0, or if it's an explicitly free opcode (STOP, JUMPDEST)
-			if gas > 0 || opcode == vm.STOP || opcode == vm.JUMPDEST {
+		if op := jt[opcode]; op != nil {
+			if gas := op.GetConstantGas(); gas > 0 || opcode == vm.STOP || opcode == vm.JUMPDEST {
 				schedule.Overrides[opcode.String()] = gas
 			}
 		}
 	}
 
-	// === Dynamic gas components ===
-	//
-	// These values are used in dynamic gas functions (e.g., memoryGasCost, memoryCopierGas)
-	// but are not stored in the JumpTable's constantGas field.
-	//
-	// IMPORTANT: These params constants have NOT changed across any Ethereum fork to date.
-	// Erigon's dynamic gas functions reference them directly without fork checks.
-	// If a future EIP changes these values, both Erigon and this code would need updates
-	// to add fork-aware logic (similar to how EXP_BYTE is handled below).
-	//
-	// Values that HAVE changed across forks use explicit fork checks (see below).
-
-	// Memory gas (used by memory expansion calculation in memoryGasCost)
+	// Dynamic gas defaults
 	schedule.Overrides[vm.GasKeyMemory] = params.MemoryGas
-
-	// Copy gas (per-word cost for CALLDATACOPY, CODECOPY, etc. in memoryCopierGas)
 	schedule.Overrides[vm.GasKeyCopy] = params.CopyGas
-
-	// Keccak256 per-word cost
 	schedule.Overrides[vm.GasKeyKeccak256Word] = params.Keccak256WordGas
-
-	// Log costs
 	schedule.Overrides[vm.GasKeyLog] = params.LogGas
 	schedule.Overrides[vm.GasKeyLogTopic] = params.LogTopicGas
 	schedule.Overrides[vm.GasKeyLogData] = params.LogDataGas
-
-	// Call costs (unchanged since Frontier)
 	schedule.Overrides[vm.GasKeyCallValueXfer] = params.CallValueTransferGas
 	schedule.Overrides[vm.GasKeyCallNewAccount] = params.CallNewAccountGas
-
-	// Create/Selfdestruct costs
 	schedule.Overrides[vm.GasKeyCreateBySelfDestruct] = params.CreateBySelfdestructGas
 	schedule.Overrides[vm.GasKeyInitCodeWord] = params.InitCodeWordGas
 
-	// === Fork-specific dynamic gas components ===
-	//
-	// These values HAVE changed across forks, so we check chain rules.
-
-	// EXP byte cost: Changed in EIP-160 (Spurious Dragon)
+	// Fork-specific defaults
 	if rules.IsSpuriousDragon {
 		schedule.Overrides[vm.GasKeyExpByte] = params.ExpByteEIP160
 	} else {
 		schedule.Overrides[vm.GasKeyExpByte] = params.ExpByteFrontier
 	}
 
-	// EIP-2929 (Berlin+): Cold/warm access costs replace flat costs
 	if rules.IsBerlin {
 		schedule.Overrides[vm.GasKeySloadCold] = params.ColdSloadCostEIP2929
 		schedule.Overrides[vm.GasKeySloadWarm] = params.WarmStorageReadCostEIP2929
 		schedule.Overrides[vm.GasKeyCallCold] = params.ColdAccountAccessCostEIP2929
 		schedule.Overrides[vm.GasKeyCallWarm] = params.WarmStorageReadCostEIP2929
-		// Remove the single SLOAD cost since Berlin uses cold/warm
 		delete(schedule.Overrides, vm.SLOAD.String())
 	}
 
-	// EIP-2200 (Istanbul+): SSTORE costs
 	if rules.IsIstanbul {
 		schedule.Overrides[vm.GasKeySstoreSet] = params.SstoreSetGasEIP2200
 		schedule.Overrides[vm.GasKeySstoreReset] = params.SstoreResetGasEIP2200
