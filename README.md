@@ -18,8 +18,7 @@ erigone/
 ├── patches/
 │   └── erigontech/erigon/
 │       ├── main.patch            # Integration: backend.go, config.go, flags.go
-│       ├── main-01-gas-fix.patch # Bug fix: callGas underflow guard
-│       └── main-02-stages-fix.patch # Integration command stages fix
+│       └── main-01-gas-fix.patch # Bug fix: callGas underflow guard
 ├── ci/
 │   ├── Dockerfile.ethpandaops    # Multi-arch Docker build
 │   └── disable-upstream-workflows.sh
@@ -102,8 +101,7 @@ Instead of patching 39+ workflow renames, a simple script renames all non-ethpan
 
 The actual patch surface is minimal:
 - **`main.patch`** (~70 lines): Adds `--xatu.config` flag and `initXatu()` call
-- **`main-01-gas-fix.patch`** (~214 lines): Guards `callGas()` against underflow
-- **`main-02-stages-fix.patch`** (~87 lines): Integration command stages fix
+- **`main-01-gas-fix.patch`** (~15 lines): Guards `callGas()` against underflow
 
 ## Updating
 
