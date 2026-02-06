@@ -260,7 +260,7 @@ index bb673d0..7637b8f 100644
  		}
  	}
 diff --git a/execution/vm/interpreter.go b/execution/vm/interpreter.go
-index 41b9572..da1c7cc 100644
+index 41b9572..6a83127 100644
 --- a/execution/vm/interpreter.go
 +++ b/execution/vm/interpreter.go
 @@ -48,6 +48,10 @@ type Config struct {
@@ -274,74 +274,22 @@ index 41b9572..da1c7cc 100644
  }
  
  func (vmConfig *Config) HasEip3860(rules *chain.Rules) bool {
-@@ -179,18 +183,71 @@ type keccakState interface {
- 	Read([]byte) (int, error)
+@@ -190,7 +194,23 @@ func copyJumpTable(jt *JumpTable) *JumpTable {
+ 	return &copy
  }
  
--func copyJumpTable(jt *JumpTable) *JumpTable {
--	var copy JumpTable
-+// CopyJumpTable creates a deep copy of a JumpTable for modification.
-+// This is used by custom gas schedule implementations to create modified JumpTables.
++// CopyJumpTable is an exported wrapper for copyJumpTable.
 +func CopyJumpTable(jt *JumpTable) *JumpTable {
-+	var cp JumpTable
- 	for i, op := range jt {
- 		if op != nil {
- 			opCopy := *op
--			copy[i] = &opCopy
-+			cp[i] = &opCopy
- 		}
- 	}
--	return &copy
-+	return &cp
-+}
-+
-+// Alias for backward compatibility
-+func copyJumpTable(jt *JumpTable) *JumpTable {
-+	return CopyJumpTable(jt)
++	return copyJumpTable(jt)
 +}
 +
 +// GetBaseJumpTable returns the base JumpTable for a given chain rules.
 +// The returned JumpTable is a copy that can be safely modified.
 +// This is used by gas repricing simulation to create custom JumpTables.
 +func GetBaseJumpTable(chainRules *chain.Rules) *JumpTable {
-+	var jt *JumpTable
-+	switch {
-+	case chainRules.IsAmsterdam:
-+		jt = &amsterdamInstructionSet
-+	case chainRules.IsOsaka:
-+		jt = &osakaInstructionSet
-+	case chainRules.IsBhilai:
-+		jt = &bhilaiInstructionSet
-+	case chainRules.IsPrague:
-+		jt = &pragueInstructionSet
-+	case chainRules.IsCancun:
-+		jt = &cancunInstructionSet
-+	case chainRules.IsNapoli:
-+		jt = &napoliInstructionSet
-+	case chainRules.IsShanghai:
-+		jt = &shanghaiInstructionSet
-+	case chainRules.IsLondon:
-+		jt = &londonInstructionSet
-+	case chainRules.IsBerlin:
-+		jt = &berlinInstructionSet
-+	case chainRules.IsIstanbul:
-+		jt = &istanbulInstructionSet
-+	case chainRules.IsConstantinople:
-+		jt = &constantinopleInstructionSet
-+	case chainRules.IsByzantium:
-+		jt = &byzantiumInstructionSet
-+	case chainRules.IsSpuriousDragon:
-+		jt = &spuriousDragonInstructionSet
-+	case chainRules.IsTangerineWhistle:
-+		jt = &tangerineWhistleInstructionSet
-+	case chainRules.IsHomestead:
-+		jt = &homesteadInstructionSet
-+	default:
-+		jt = &frontierInstructionSet
-+	}
-+	return CopyJumpTable(jt)
- }
- 
++	return CopyJumpTable(jumpTable(chainRules, Config{}))
++}
++
  func jumpTable(chainRules *chain.Rules, cfg Config) *JumpTable {
 +	// If a custom JumpTable is provided, use it directly
 +	if cfg.CustomJumpTable != nil {
