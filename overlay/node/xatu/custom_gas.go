@@ -24,44 +24,6 @@ import (
 	"github.com/erigontech/erigon/execution/vm"
 )
 
-// Gas parameter keys for dynamic gas components.
-// These are used as keys in CustomGasSchedule.Overrides.
-// Opcode names (ADD, MUL, etc.) use their string representation directly.
-const (
-	// Storage - SLOAD (EIP-2929 cold/warm)
-	GasKeySloadCold = "SLOAD_COLD"
-	GasKeySloadWarm = "SLOAD_WARM"
-
-	// Storage - SSTORE (EIP-2200)
-	GasKeySstoreSet   = "SSTORE_SET"
-	GasKeySstoreReset = "SSTORE_RESET"
-
-	// Call costs (EIP-2929 cold/warm)
-	GasKeyCallCold       = "CALL_COLD"
-	GasKeyCallWarm       = "CALL_WARM"
-	GasKeyCallValueXfer  = "CALL_VALUE_XFER"
-	GasKeyCallNewAccount = "CALL_NEW_ACCOUNT"
-
-	// Memory/Copy costs
-	GasKeyMemory = "MEMORY"
-	GasKeyCopy   = "COPY"
-
-	// Keccak256 costs
-	GasKeyKeccak256Word = "KECCAK256_WORD"
-
-	// Log costs
-	GasKeyLog      = "LOG"
-	GasKeyLogTopic = "LOG_TOPIC"
-	GasKeyLogData  = "LOG_DATA"
-
-	// EXP cost
-	GasKeyExpByte = "EXP_BYTE"
-
-	// Create costs
-	GasKeyCreateBySelfDestruct = "CREATE_BY_SELFDESTRUCT"
-	GasKeyInitCodeWord         = "INIT_CODE_WORD"
-)
-
 // CustomGasSchedule allows overriding gas costs for simulation.
 // Keys are gas parameter names (e.g., GasKeySloadCold, or opcode names like "ADD").
 // Any key not present uses the default value from the current fork.
@@ -108,26 +70,26 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	// Values that HAVE changed across forks use explicit fork checks (see below).
 
 	// Memory gas (used by memory expansion calculation in memoryGasCost)
-	schedule.Overrides[GasKeyMemory] = params.MemoryGas
+	schedule.Overrides[vm.GasKeyMemory] = params.MemoryGas
 
 	// Copy gas (per-word cost for CALLDATACOPY, CODECOPY, etc. in memoryCopierGas)
-	schedule.Overrides[GasKeyCopy] = params.CopyGas
+	schedule.Overrides[vm.GasKeyCopy] = params.CopyGas
 
 	// Keccak256 per-word cost
-	schedule.Overrides[GasKeyKeccak256Word] = params.Keccak256WordGas
+	schedule.Overrides[vm.GasKeyKeccak256Word] = params.Keccak256WordGas
 
 	// Log costs
-	schedule.Overrides[GasKeyLog] = params.LogGas
-	schedule.Overrides[GasKeyLogTopic] = params.LogTopicGas
-	schedule.Overrides[GasKeyLogData] = params.LogDataGas
+	schedule.Overrides[vm.GasKeyLog] = params.LogGas
+	schedule.Overrides[vm.GasKeyLogTopic] = params.LogTopicGas
+	schedule.Overrides[vm.GasKeyLogData] = params.LogDataGas
 
 	// Call costs (unchanged since Frontier)
-	schedule.Overrides[GasKeyCallValueXfer] = params.CallValueTransferGas
-	schedule.Overrides[GasKeyCallNewAccount] = params.CallNewAccountGas
+	schedule.Overrides[vm.GasKeyCallValueXfer] = params.CallValueTransferGas
+	schedule.Overrides[vm.GasKeyCallNewAccount] = params.CallNewAccountGas
 
 	// Create/Selfdestruct costs
-	schedule.Overrides[GasKeyCreateBySelfDestruct] = params.CreateBySelfdestructGas
-	schedule.Overrides[GasKeyInitCodeWord] = params.InitCodeWordGas
+	schedule.Overrides[vm.GasKeyCreateBySelfDestruct] = params.CreateBySelfdestructGas
+	schedule.Overrides[vm.GasKeyInitCodeWord] = params.InitCodeWordGas
 
 	// === Fork-specific dynamic gas components ===
 	//
@@ -135,25 +97,25 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 
 	// EXP byte cost: Changed in EIP-160 (Spurious Dragon)
 	if rules.IsSpuriousDragon {
-		schedule.Overrides[GasKeyExpByte] = params.ExpByteEIP160
+		schedule.Overrides[vm.GasKeyExpByte] = params.ExpByteEIP160
 	} else {
-		schedule.Overrides[GasKeyExpByte] = params.ExpByteFrontier
+		schedule.Overrides[vm.GasKeyExpByte] = params.ExpByteFrontier
 	}
 
 	// EIP-2929 (Berlin+): Cold/warm access costs replace flat costs
 	if rules.IsBerlin {
-		schedule.Overrides[GasKeySloadCold] = params.ColdSloadCostEIP2929
-		schedule.Overrides[GasKeySloadWarm] = params.WarmStorageReadCostEIP2929
-		schedule.Overrides[GasKeyCallCold] = params.ColdAccountAccessCostEIP2929
-		schedule.Overrides[GasKeyCallWarm] = params.WarmStorageReadCostEIP2929
+		schedule.Overrides[vm.GasKeySloadCold] = params.ColdSloadCostEIP2929
+		schedule.Overrides[vm.GasKeySloadWarm] = params.WarmStorageReadCostEIP2929
+		schedule.Overrides[vm.GasKeyCallCold] = params.ColdAccountAccessCostEIP2929
+		schedule.Overrides[vm.GasKeyCallWarm] = params.WarmStorageReadCostEIP2929
 		// Remove the single SLOAD cost since Berlin uses cold/warm
 		delete(schedule.Overrides, vm.SLOAD.String())
 	}
 
 	// EIP-2200 (Istanbul+): SSTORE costs
 	if rules.IsIstanbul {
-		schedule.Overrides[GasKeySstoreSet] = params.SstoreSetGasEIP2200
-		schedule.Overrides[GasKeySstoreReset] = params.SstoreResetGasEIP2200
+		schedule.Overrides[vm.GasKeySstoreSet] = params.SstoreSetGasEIP2200
+		schedule.Overrides[vm.GasKeySstoreReset] = params.SstoreResetGasEIP2200
 	}
 
 	return schedule

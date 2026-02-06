@@ -36,8 +36,16 @@ func (g *GasSchedule) GetOr(key string, defaultVal uint64) uint64 {
 	return defaultVal
 }
 
-// Gas parameter keys used by patched gas functions.
-// These keys are used in GasSchedule.Overrides to specify custom gas costs.
+// Gas parameter keys for dynamic gas components.
+//
+// These are NOT opcode names. Constant-gas opcodes (ADD, MUL, PUSH, etc.) use
+// their string names directly via JumpTable.SetConstantGas().
+//
+// These keys are for gas costs calculated at runtime based on state:
+// - Cold/warm access patterns (EIP-2929)
+// - Storage modification costs (EIP-2200)
+// - Memory/copy operations
+// - Contract creation costs
 const (
 	GasKeySloadCold            = "SLOAD_COLD"
 	GasKeySloadWarm            = "SLOAD_WARM"
