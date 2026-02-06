@@ -100,6 +100,9 @@ rm -rf node/xatu
 # Remove backend_xatu files
 rm -f node/eth/backend_xatu.go node/eth/backend_xatu_stub.go
 
+# Remove execution/vm overlay files
+rm -f execution/vm/gas_schedule.go
+
 # Step 2: Restore go.mod/go.sum to upstream state
 if git status --porcelain | grep -q "go\.\(mod\|sum\)"; then
     [ "$QUIET" = false ] && echo "Restoring go.mod/go.sum to upstream state..."

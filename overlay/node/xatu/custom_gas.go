@@ -56,6 +56,10 @@ const (
 
 	// EXP cost
 	GasKeyExpByte = "EXP_BYTE"
+
+	// Create costs
+	GasKeyCreateBySelfDestruct = "CREATE_BY_SELFDESTRUCT"
+	GasKeyInitCodeWord         = "INIT_CODE_WORD"
 )
 
 // CustomGasSchedule allows overriding gas costs for simulation.
@@ -121,6 +125,10 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	schedule.Overrides[GasKeyCallValueXfer] = params.CallValueTransferGas
 	schedule.Overrides[GasKeyCallNewAccount] = params.CallNewAccountGas
 
+	// Create/Selfdestruct costs
+	schedule.Overrides[GasKeyCreateBySelfDestruct] = params.CreateBySelfdestructGas
+	schedule.Overrides[GasKeyInitCodeWord] = params.InitCodeWordGas
+
 	// === Fork-specific dynamic gas components ===
 	//
 	// These values HAVE changed across forks, so we check chain rules.
@@ -164,4 +172,13 @@ func (c *CustomGasSchedule) Get(key string, defaultVal uint64) uint64 {
 // HasOverrides returns true if any custom values have been set.
 func (c *CustomGasSchedule) HasOverrides() bool {
 	return c != nil && len(c.Overrides) > 0
+}
+
+// ToVMGasSchedule converts CustomGasSchedule to vm.GasSchedule.
+// The vm.GasSchedule is used by patched gas functions via GetOr().
+func (c *CustomGasSchedule) ToVMGasSchedule() *vm.GasSchedule {
+	if c == nil || len(c.Overrides) == 0 {
+		return nil
+	}
+	return &vm.GasSchedule{Overrides: c.Overrides}
 }

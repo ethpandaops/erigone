@@ -436,6 +436,11 @@ func (s *Service) executeSingleTransaction(
 	// Create EVM
 	evm := vm.NewEVM(blockCtx, txCtx, statedb, s.chainConfig, vmConfig)
 
+	// Set GasSchedule for dynamic gas overrides (patched gas functions read from this)
+	if gasSchedule != nil && gasSchedule.HasOverrides() {
+		evm.GasSchedule = gasSchedule.ToVMGasSchedule()
+	}
+
 	// Execute
 	gp := new(protocol.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
 	execResult, err := protocol.ApplyMessage(evm, msg, gp, true, false, s.engine)
