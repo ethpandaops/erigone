@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 4dd23da5ef..3b261b23fa 100644
+index 4dd23da..3b261b2 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -271,6 +271,12 @@ var (
@@ -25,8 +25,23 @@ index 4dd23da5ef..3b261b23fa 100644
  	if ctx.Bool(ExperimentalConcurrentCommitmentFlag.Name) {
  		// cfg.ExperimentalConcurrentCommitment = true
  		statecfg.ExperimentalConcurrentCommitment = true
+diff --git a/execution/vm/gas.go b/execution/vm/gas.go
+index ff18f09..719b0a8 100644
+--- a/execution/vm/gas.go
++++ b/execution/vm/gas.go
+@@ -39,6 +39,10 @@ const (
+ // As part of EIP 150 (TangerineWhistle), the returned gas is gas - base * 63 / 64.
+ func callGas(isEip150 bool, availableGas, base uint64, callCost *uint256.Int) (uint64, error) {
+ 	if isEip150 {
++		// Guard against underflow: if availableGas < base, no gas can be passed to the child call
++		if availableGas < base {
++			return 0, nil
++		}
+ 		availableGas = availableGas - base
+ 		gas := availableGas - availableGas/64
+ 		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index 9a745040f7..b01dcc1471 100644
+index 9a74504..b01dcc1 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
 @@ -179,6 +179,8 @@ var DefaultFlags = []cli.Flag{
@@ -39,7 +54,7 @@ index 9a745040f7..b01dcc1471 100644
  	&utils.OverrideAmsterdamFlag,
  	&utils.KeepStoredChainConfigFlag,
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 6f46fe6037..1b25a1fdfc 100644
+index 6f46fe6..1b25a1f 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
 @@ -1154,6 +1154,13 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
@@ -57,7 +72,7 @@ index 6f46fe6037..1b25a1fdfc 100644
  
  	if config.SilkwormRpcDaemon && httpRpcCfg.Enabled {
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
-index 8d90346a3f..6d4419d783 100644
+index 8d90346..6d4419d 100644
 --- a/node/ethconfig/config.go
 +++ b/node/ethconfig/config.go
 @@ -246,6 +246,8 @@ type Config struct {
