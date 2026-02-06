@@ -1,0 +1,198 @@
+name: Check and Update Patches
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update all patches'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  discover-patches:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Discover patch files
+        id: set-matrix
+        run: |
+          # Find all base patch files and extract org/repo/ref info
+          # Extension patches (e.g. main-01-gas-fix.patch) are discovered by apply script
+          patches=$(find patches -name "*.patch" -type f | while read patch; do
+            # Extract org/repo/branch from path like patches/erigontech/erigon/main.patch
+            path_parts=$(echo "$patch" | sed 's|^patches/||; s|\.patch$||')
+            org=$(echo "$path_parts" | cut -d'/' -f1)
+            repo=$(echo "$path_parts" | cut -d'/' -f2)
+            branch=$(echo "$path_parts" | cut -d'/' -f3-)
+
+            # Skip extension patches (contain a hyphen-digit pattern like -01-)
+            if echo "$branch" | grep -qE '^.*-[0-9]+-'; then
+              continue
+            fi
+
+            echo "{\"org\":\"$org\",\"repo\":\"$repo\",\"branch\":\"$branch\"}"
+          done | jq -sc '.')
+
+          echo "Found patches: $patches"
+          echo "matrix={\"include\":$patches}" >> $GITHUB_OUTPUT
+
+  check-patch:
+    needs: discover-patches
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.discover-patches.outputs.matrix)}}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Run erigone build for ${{ matrix.org }}/${{ matrix.repo }} ${{ matrix.branch }}
+        id: build
+        run: |
+          echo "Building ${{ matrix.org }}/${{ matrix.repo }} on branch ${{ matrix.branch }}"
+
+          # Run the build script in CI mode
+          ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.branch }}" --ci
+
+          # Check if patches were updated
+          if git diff --quiet patches/; then
+            echo "patch_changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to patches"
+          else
+            echo "patch_changed=true" >> $GITHUB_OUTPUT
+            echo "Patches have been updated"
+
+            # Get the commit hash of the upstream repo that was built
+            cd erigon
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            cd ..
+            echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload updated patches as artifact
+        if: steps.build.outputs.patch_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: patches-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}
+          path: patches/${{ matrix.org }}/${{ matrix.repo }}/
+
+      - name: Save patch metadata
+        if: steps.build.outputs.patch_changed == 'true'
+        run: |
+          mkdir -p patch-metadata
+          echo "{
+            \"org\": \"${{ matrix.org }}\",
+            \"repo\": \"${{ matrix.repo }}\",
+            \"branch\": \"${{ matrix.branch }}\",
+            \"commit_hash\": \"${{ steps.build.outputs.commit_hash }}\"
+          }" > patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}.json
+
+      - name: Upload patch metadata
+        if: steps.build.outputs.patch_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadata-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}
+          path: patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}.json
+
+  update-and-release:
+    needs: check-patch
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all patch artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: Process updated patches
+        id: process
+        run: |
+          PATCHES_UPDATED=false
+          RELEASE_NOTES=""
+
+          for artifact_dir in artifacts/patches-*; do
+            if [ -d "$artifact_dir" ]; then
+              echo "Processing $artifact_dir"
+              artifact_name=$(basename "$artifact_dir")
+              org_repo_branch=${artifact_name#patches-}
+              org=$(echo "$org_repo_branch" | cut -d'-' -f1)
+              repo=$(echo "$org_repo_branch" | cut -d'-' -f2)
+
+              dest_dir="patches/$org/$repo"
+              mkdir -p "$dest_dir"
+              cp "$artifact_dir"/*.patch "$dest_dir/"
+
+              PATCHES_UPDATED=true
+
+              metadata_file="artifacts/metadata-$org_repo_branch/${org}-${repo}-*.json"
+              for mf in $metadata_file; do
+                if [ -f "$mf" ]; then
+                  commit_hash=$(jq -r '.commit_hash' "$mf")
+                  branch=$(jq -r '.branch' "$mf")
+                  RELEASE_NOTES="${RELEASE_NOTES}- Updated patches for ${org}/${repo} ${branch} (commit: ${commit_hash})\n"
+                fi
+              done
+            fi
+          done
+
+          echo "patches_updated=$PATCHES_UPDATED" >> $GITHUB_OUTPUT
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Commit updated patches
+        if: steps.process.outputs.patches_updated == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add patches/
+          git commit -m "Update patches [skip ci]
+
+          ${{ steps.process.outputs.release_notes }}"
+
+          git push
+
+      - name: Create release for each updated patch
+        if: steps.process.outputs.patches_updated == 'true'
+        run: |
+          for metadata_file in artifacts/metadata-*/*.json; do
+            if [ -f "$metadata_file" ]; then
+              org=$(jq -r '.org' "$metadata_file")
+              repo=$(jq -r '.repo' "$metadata_file")
+              branch=$(jq -r '.branch' "$metadata_file")
+              commit_hash=$(jq -r '.commit_hash' "$metadata_file")
+
+              tag_name="${org}-${repo}-${branch}-${commit_hash}"
+
+              release_body="Automated patch update for ${org}/${repo} on branch ${branch}
+
+              Built from upstream commit: ${commit_hash}
+
+              This release contains the updated patch files."
+
+              gh release create "$tag_name" \
+                --title "Patch Update: ${org}/${repo} ${branch} (${commit_hash})" \
+                --notes "$release_body" \
+                patches/${org}/${repo}/*.patch || echo "Release $tag_name may already exist"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

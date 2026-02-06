@@ -1,0 +1,71 @@
+diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
+index 4dd23da5ef..3b261b23fa 100644
+--- a/cmd/utils/flags.go
++++ b/cmd/utils/flags.go
+@@ -271,6 +271,12 @@ var (
+ 		Usage: "Reporting URL of a ethstats service (nodename:secret@host:port)",
+ 		Value: "",
+ 	}
++	// Xatu: Xatu execution processor config
++	XatuConfigFlag = cli.StringFlag{
++		Name:  "xatu.config",
++		Usage: "Path to Xatu execution processor config file",
++		Value: "",
++	}
+ 	FakePoWFlag = cli.BoolFlag{
+ 		Name:  "fakepow",
+ 		Usage: "Disables proof-of-work verification",
+@@ -1946,6 +1952,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+ 	cfg.AllowAA = ctx.Bool(AAFlag.Name)
+ 	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
+ 
++	// Xatu: Set Xatu execution processor configuration
++	cfg.XatuConfig = ctx.String(XatuConfigFlag.Name)
++
+ 	if ctx.Bool(ExperimentalConcurrentCommitmentFlag.Name) {
+ 		// cfg.ExperimentalConcurrentCommitment = true
+ 		statecfg.ExperimentalConcurrentCommitment = true
+diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
+index 9a745040f7..b01dcc1471 100644
+--- a/node/cli/default_flags.go
++++ b/node/cli/default_flags.go
+@@ -179,6 +179,8 @@ var DefaultFlags = []cli.Flag{
+ 	&utils.BorBlockSizeFlag,
+ 	&utils.AAFlag,
+ 	&utils.EthStatsURLFlag,
++	// Xatu: Xatu execution processor flag
++	&utils.XatuConfigFlag,
+ 	&utils.OverrideOsakaFlag,
+ 	&utils.OverrideAmsterdamFlag,
+ 	&utils.KeepStoredChainConfigFlag,
+diff --git a/node/eth/backend.go b/node/eth/backend.go
+index 6f46fe6037..1b25a1fdfc 100644
+--- a/node/eth/backend.go
++++ b/node/eth/backend.go
+@@ -1154,6 +1154,13 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+ 		}
+ 	}
+ 
++	// Xatu: Initialize Xatu service if configured (requires -tags embedded)
++	if config.XatuConfig != "" {
++		if err := initXatu(stack, chainKv, s.blockReader, chainConfig, s.engine, config.XatuConfig, s.logger); err != nil {
++			return err
++		}
++	}
++
+ 	s.apiList = jsonrpc.APIList(chainKv, s.ethRpcClient, s.txPoolRpcClient, s.miningRpcClient, s.rpcFilters, s.rpcDaemonStateCache, blockReader, &httpRpcCfg, s.engine, s.logger, s.polygonBridge, s.heimdallService)
+ 
+ 	if config.SilkwormRpcDaemon && httpRpcCfg.Enabled {
+diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
+index 8d90346a3f..6d4419d783 100644
+--- a/node/ethconfig/config.go
++++ b/node/ethconfig/config.go
+@@ -246,6 +246,8 @@ type Config struct {
+ 
+ 	// Ethstats service
+ 	Ethstats string
++	// Xatu: Xatu execution processor config path
++	XatuConfig string
+ 	// Consensus layer
+ 	InternalCL bool
+ 
