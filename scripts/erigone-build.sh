@@ -185,11 +185,11 @@ if make erigon BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm; then
     fi
 
     if [ "$CI_MODE" = true ]; then
-        PATCH_OUTPUT=$("$SCRIPT_DIR/save-patch.sh" -r "$ORG/$REPO" -b "$BRANCH" $CI_FLAGS erigon 2>&1)
-        PATCH_EXIT_CODE=$?
+        PATCH_OUTPUT=$("$SCRIPT_DIR/save-patch.sh" -r "$ORG/$REPO" -b "$BRANCH" $CI_FLAGS erigon 2>&1) || PATCH_EXIT_CODE=$?
+        PATCH_EXIT_CODE=${PATCH_EXIT_CODE:-0}
     else
-        "$SCRIPT_DIR/save-patch.sh" -r "$ORG/$REPO" -b "$BRANCH" erigon
-        PATCH_EXIT_CODE=$?
+        "$SCRIPT_DIR/save-patch.sh" -r "$ORG/$REPO" -b "$BRANCH" erigon || PATCH_EXIT_CODE=$?
+        PATCH_EXIT_CODE=${PATCH_EXIT_CODE:-0}
     fi
 
     if [ $PATCH_EXIT_CODE -eq 0 ]; then
