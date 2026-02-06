@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 4dd23da..3b261b2 100644
+index 4dd23da..3c00061 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -271,6 +271,12 @@ var (
@@ -9,7 +9,7 @@ index 4dd23da..3b261b2 100644
 +	// Xatu: Xatu execution processor config
 +	XatuConfigFlag = cli.StringFlag{
 +		Name:  "xatu.config",
-+		Usage: "Path to Xatu execution processor config file",
++		Usage: "Path to Xatu execution processor config file, or 'simulation' for simulation-only mode",
 +		Value: "",
 +	}
  	FakePoWFlag = cli.BoolFlag{
@@ -40,6 +40,151 @@ index ff18f09..719b0a8 100644
  		availableGas = availableGas - base
  		gas := availableGas - availableGas/64
  		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150
+diff --git a/execution/vm/interpreter.go b/execution/vm/interpreter.go
+index 41b9572..da1c7cc 100644
+--- a/execution/vm/interpreter.go
++++ b/execution/vm/interpreter.go
+@@ -48,6 +48,10 @@ type Config struct {
+ 	RestoreState  bool // Revert all changes made to the state (useful for constant system calls)
+ 
+ 	ExtraEips []int // Additional EIPS that are to be enabled
++
++	// CustomJumpTable allows injecting a modified JumpTable for gas repricing simulation.
++	// When set, this JumpTable is used instead of the fork-based default.
++	CustomJumpTable *JumpTable
+ }
+ 
+ func (vmConfig *Config) HasEip3860(rules *chain.Rules) bool {
+@@ -179,18 +183,71 @@ type keccakState interface {
+ 	Read([]byte) (int, error)
+ }
+ 
+-func copyJumpTable(jt *JumpTable) *JumpTable {
+-	var copy JumpTable
++// CopyJumpTable creates a deep copy of a JumpTable for modification.
++// This is used by custom gas schedule implementations to create modified JumpTables.
++func CopyJumpTable(jt *JumpTable) *JumpTable {
++	var cp JumpTable
+ 	for i, op := range jt {
+ 		if op != nil {
+ 			opCopy := *op
+-			copy[i] = &opCopy
++			cp[i] = &opCopy
+ 		}
+ 	}
+-	return &copy
++	return &cp
++}
++
++// Alias for backward compatibility
++func copyJumpTable(jt *JumpTable) *JumpTable {
++	return CopyJumpTable(jt)
++}
++
++// GetBaseJumpTable returns the base JumpTable for a given chain rules.
++// The returned JumpTable is a copy that can be safely modified.
++// This is used by gas repricing simulation to create custom JumpTables.
++func GetBaseJumpTable(chainRules *chain.Rules) *JumpTable {
++	var jt *JumpTable
++	switch {
++	case chainRules.IsAmsterdam:
++		jt = &amsterdamInstructionSet
++	case chainRules.IsOsaka:
++		jt = &osakaInstructionSet
++	case chainRules.IsBhilai:
++		jt = &bhilaiInstructionSet
++	case chainRules.IsPrague:
++		jt = &pragueInstructionSet
++	case chainRules.IsCancun:
++		jt = &cancunInstructionSet
++	case chainRules.IsNapoli:
++		jt = &napoliInstructionSet
++	case chainRules.IsShanghai:
++		jt = &shanghaiInstructionSet
++	case chainRules.IsLondon:
++		jt = &londonInstructionSet
++	case chainRules.IsBerlin:
++		jt = &berlinInstructionSet
++	case chainRules.IsIstanbul:
++		jt = &istanbulInstructionSet
++	case chainRules.IsConstantinople:
++		jt = &constantinopleInstructionSet
++	case chainRules.IsByzantium:
++		jt = &byzantiumInstructionSet
++	case chainRules.IsSpuriousDragon:
++		jt = &spuriousDragonInstructionSet
++	case chainRules.IsTangerineWhistle:
++		jt = &tangerineWhistleInstructionSet
++	case chainRules.IsHomestead:
++		jt = &homesteadInstructionSet
++	default:
++		jt = &frontierInstructionSet
++	}
++	return CopyJumpTable(jt)
+ }
+ 
+ func jumpTable(chainRules *chain.Rules, cfg Config) *JumpTable {
++	// If a custom JumpTable is provided, use it directly
++	if cfg.CustomJumpTable != nil {
++		return cfg.CustomJumpTable
++	}
+ 	var jt *JumpTable
+ 	switch {
+ 	case chainRules.IsAmsterdam:
+diff --git a/execution/vm/jump_table.go b/execution/vm/jump_table.go
+index e035ed2..13bfb50 100644
+--- a/execution/vm/jump_table.go
++++ b/execution/vm/jump_table.go
+@@ -53,6 +53,28 @@ type operation struct {
+ 	string     stringer
+ }
+ 
++// SetConstantGas sets the constant gas cost for an operation.
++// Used by custom JumpTable builders for gas repricing simulation.
++func (op *operation) SetConstantGas(gas uint64) {
++	op.constantGas = gas
++}
++
++// GetConstantGas returns the constant gas cost for an operation.
++func (op *operation) GetConstantGas() uint64 {
++	return op.constantGas
++}
++
++// SetDynamicGas sets the dynamic gas function for an operation.
++// Used by custom JumpTable builders for gas repricing simulation.
++func (op *operation) SetDynamicGas(fn func(*EVM, *CallContext, uint64, uint64) (uint64, error)) {
++	op.dynamicGas = fn
++}
++
++// GetDynamicGas returns the dynamic gas function for an operation.
++func (op *operation) GetDynamicGas() func(*EVM, *CallContext, uint64, uint64) (uint64, error) {
++	return op.dynamicGas
++}
++
+ var (
+ 	frontierInstructionSet         = newFrontierInstructionSet()
+ 	homesteadInstructionSet        = newHomesteadInstructionSet()
+diff --git a/execution/vm/memory.go b/execution/vm/memory.go
+index 8674806..66bd695 100644
+--- a/execution/vm/memory.go
++++ b/execution/vm/memory.go
+@@ -112,6 +112,16 @@ func (m *Memory) reset() {
+ 	m.store = m.store[:0]
+ }
+ 
++// LastGasCost returns the last gas cost charged for memory expansion.
++func (m *Memory) LastGasCost() uint64 {
++	return m.lastGasCost
++}
++
++// SetLastGasCost sets the last gas cost for memory expansion tracking.
++func (m *Memory) SetLastGasCost(cost uint64) {
++	m.lastGasCost = cost
++}
++
+ // GetCopy returns offset + size as a new slice
+ func (m *Memory) GetCopy(offset, size uint64) (cpy []byte) {
+ 	if size == 0 {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
 index 9a74504..b01dcc1 100644
 --- a/node/cli/default_flags.go
@@ -54,23 +199,33 @@ index 9a74504..b01dcc1 100644
  	&utils.OverrideAmsterdamFlag,
  	&utils.KeepStoredChainConfigFlag,
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 6f46fe6..1b25a1f 100644
+index 6f46fe6..0eeb84d 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1154,6 +1154,13 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+@@ -1154,8 +1154,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
  		}
  	}
  
 +	// Xatu: Initialize Xatu service if configured (requires -tags embedded)
++	var xatuAPIs []rpc.API
 +	if config.XatuConfig != "" {
-+		if err := initXatu(stack, chainKv, s.blockReader, chainConfig, s.engine, config.XatuConfig, s.logger); err != nil {
-+			return err
++		var xatuErr error
++		xatuAPIs, xatuErr = initXatu(stack, chainKv, s.blockReader, chainConfig, s.engine, config.XatuConfig, s.logger)
++		if xatuErr != nil {
++			return xatuErr
 +		}
 +	}
 +
  	s.apiList = jsonrpc.APIList(chainKv, s.ethRpcClient, s.txPoolRpcClient, s.miningRpcClient, s.rpcFilters, s.rpcDaemonStateCache, blockReader, &httpRpcCfg, s.engine, s.logger, s.polygonBridge, s.heimdallService)
  
++	// Add Xatu simulation APIs if service is available
++	if len(xatuAPIs) > 0 {
++		s.apiList = append(s.apiList, xatuAPIs...)
++	}
++
  	if config.SilkwormRpcDaemon && httpRpcCfg.Enabled {
+ 		interface_log_settings := silkworm.RpcInterfaceLogSettings{
+ 			Enabled:         config.SilkwormRpcLogEnabled,
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
 index 8d90346..6d4419d 100644
 --- a/node/ethconfig/config.go
