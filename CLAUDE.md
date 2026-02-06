@@ -126,6 +126,18 @@ SimulateBlockGas(req)
 - Legacy pre-Berlin SSTORE functions (gasSStore, gasSStoreEIP2200) - rarely used on mainnet
 - Refund calculations - only gas charges are overridable
 
+### Maintenance Note
+
+`GasScheduleForRules()` in `custom_gas.go` returns defaults for the API:
+- **Constant gas opcodes**: Auto-updated from JumpTable (no maintenance needed)
+- **Dynamic gas defaults**: Hardcoded - if a future EIP changes them, update this function (like EXP_BYTE for Spurious Dragon)
+
+### What We Delegate to Erigon
+
+- **Intrinsic gas**: Uses `fixedgas.IntrinsicGas()` - handles all EIP-specific logic
+- **Opcode names**: Uses `vm.OpCode.String()` - opcodeMap built dynamically
+- **Constant gas costs**: Uses `vm.GetBaseJumpTable()` - fork-aware JumpTable
+
 ## RPC Endpoints
 
 | Method | Description |

@@ -26,6 +26,7 @@ import (
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/db/kv/rawdbv3"
 	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/protocol/fixedgas"
 	erigontypes "github.com/erigontech/erigon/execution/types"
 	"github.com/erigontech/erigon/execution/vm"
 	"github.com/erigontech/erigon/rpc/transactions"
@@ -95,12 +96,13 @@ type SimulateTransactionGasResult struct {
 
 // executionResult holds the result of a single EVM execution.
 type executionResult struct {
-	GasUsed     uint64
-	Err         error
-	Status      string
-	RevertCount uint64      // Number of REVERT opcodes executed (includes nested calls)
-	OpcodeCount uint64      // Total number of opcodes executed
-	CallErrors  []CallError // Errors from nested calls
+	GasUsed      uint64
+	IntrinsicGas uint64
+	Err          error
+	Status       string
+	RevertCount  uint64      // Number of REVERT opcodes executed (includes nested calls)
+	OpcodeCount  uint64      // Total number of opcodes executed
+	CallErrors   []CallError // Errors from nested calls
 }
 
 // SimulateBlockGas re-executes a block with a custom gas schedule.
@@ -258,7 +260,6 @@ func (s *Service) SimulateTransactionGas(
 	}
 
 	header := block.Header()
-	txn := block.Transactions()[txIndex]
 
 	// Run both executions in parallel
 	dualResult, err := s.executeTransactionDual(
@@ -268,26 +269,22 @@ func (s *Service) SimulateTransactionGas(
 		return nil, fmt.Errorf("failed to execute transaction: %w", err)
 	}
 
-	// Calculate intrinsic gas for breakdown display (already included in GasUsed)
-	// Note: Intrinsic gas cannot be customized - it's calculated at the protocol level
-	// before EVM execution. We display the standard intrinsic gas for both.
-	intrinsicGas := calculateIntrinsicGas(txn.GetData(), txn.GetAccessList(), txn.GetTo() == nil)
-
 	// Build result
 	// Note: GasUsed from ApplyMessage already includes intrinsic gas
+	// Intrinsic gas is calculated by Erigon and returned in the execution result
 	result := &SimulateTransactionGasResult{
 		TransactionHash: req.TransactionHash,
 		BlockNumber:     blockNum,
 		Status:          dualResult.Original.Status,
 		Original: TxGasDetail{
 			GasUsed:      dualResult.Original.GasUsed,
-			IntrinsicGas: intrinsicGas,
-			ExecutionGas: dualResult.Original.GasUsed - intrinsicGas,
+			IntrinsicGas: dualResult.Original.IntrinsicGas,
+			ExecutionGas: dualResult.Original.GasUsed - dualResult.Original.IntrinsicGas,
 		},
 		Simulated: TxGasDetail{
 			GasUsed:      dualResult.Simulated.GasUsed,
-			IntrinsicGas: intrinsicGas,
-			ExecutionGas: dualResult.Simulated.GasUsed - intrinsicGas,
+			IntrinsicGas: dualResult.Simulated.IntrinsicGas,
+			ExecutionGas: dualResult.Simulated.GasUsed - dualResult.Simulated.IntrinsicGas,
 		},
 		OpcodeBreakdown: dualResult.OpcodeBreakdown,
 	}
@@ -451,8 +448,30 @@ func (s *Service) executeSingleTransaction(
 		status = "failed"
 	}
 
+	// Calculate intrinsic gas using Erigon's function
+	txn := block.Transactions()[txIndex]
+	accessList := txn.GetAccessList()
+	var accessListLen, storageKeysLen uint64
+	if accessList != nil {
+		accessListLen = uint64(len(accessList))
+		storageKeysLen = uint64(accessList.StorageKeys())
+	}
+	intrinsicGas, _, _ := fixedgas.IntrinsicGas(
+		txn.GetData(),
+		accessListLen,
+		storageKeysLen,
+		txn.GetTo() == nil,
+		chainRules.IsHomestead,
+		chainRules.IsIstanbul,
+		chainRules.IsShanghai,
+		chainRules.IsPrague,
+		false, // isAATxn
+		0,     // authorizationsLen
+	)
+
 	result := &executionResult{
-		Status: status,
+		Status:       status,
+		IntrinsicGas: intrinsicGas,
 	}
 
 	if execResult != nil {
@@ -495,39 +514,4 @@ func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*Cust
 	_ = blockCtx // Not needed, just used to get chainRules
 
 	return GasScheduleForRules(chainRules), nil
-}
-
-// calculateIntrinsicGas calculates the intrinsic gas for a transaction.
-// Note: Intrinsic gas cannot be customized - it's calculated at the protocol level
-// before EVM execution begins, using hardcoded values.
-func calculateIntrinsicGas(data []byte, accessList erigontypes.AccessList, isCreate bool) uint64 {
-	var gas uint64
-
-	if isCreate {
-		gas = 53000 // TxGasContractCreation
-	} else {
-		gas = 21000 // TxGas
-	}
-
-	// Data gas
-	if len(data) > 0 {
-		var zeroBytes uint64
-		for _, b := range data {
-			if b == 0 {
-				zeroBytes++
-			}
-		}
-		nonZeroBytes := uint64(len(data)) - zeroBytes
-
-		gas += zeroBytes * 4     // TxDataZeroGas
-		gas += nonZeroBytes * 16 // TxDataNonZeroGasEIP2028
-	}
-
-	// Access list gas
-	if len(accessList) > 0 {
-		gas += uint64(len(accessList)) * 2400          // TxAccessListAddressGas
-		gas += uint64(accessList.StorageKeys()) * 1900 // TxAccessListStorageKeyGas
-	}
-
-	return gas
 }

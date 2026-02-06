@@ -33,6 +33,10 @@ type CustomGasSchedule struct {
 
 // GasScheduleForRules returns default gas values for a fork (for API display only).
 // Execution uses patched gas functions with hardcoded fallbacks via GetOr().
+//
+// NOTE: Constant gas opcodes come from JumpTable (auto-updated per fork).
+// Dynamic gas defaults are hardcoded here - if a future EIP changes them,
+// this function needs updating (like we did for EXP_BYTE in Spurious Dragon).
 func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	schedule := &CustomGasSchedule{Overrides: make(map[string]uint64)}
 
