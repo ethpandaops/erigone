@@ -179,6 +179,15 @@ if [ -d "$REPO_ROOT/overlay/node/eth" ]; then
     done
 fi
 
+# Copy execution/vm overlay files (gas_schedule.go, etc.)
+if [ -d "$REPO_ROOT/overlay/execution/vm" ]; then
+    for f in "$REPO_ROOT/overlay/execution/vm/"*; do
+        [ -f "$f" ] || continue
+        cp "$f" execution/vm/
+        echo -e "${GREEN}  Copied execution/vm/$(basename "$f")${NC}"
+    done
+fi
+
 # Copy CI files
 echo ""
 echo -e "${BLUE}=== Copying CI files ===${NC}"

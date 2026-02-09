@@ -47,7 +47,8 @@ import (
 
 // Config holds Xatu service configuration.
 type Config struct {
-	ConfigPath string
+	ConfigPath     string
+	SimulationOnly bool // If true, only enable simulation RPC endpoints without execution-processor
 }
 
 // Service implements the Xatu execution processor integration.
@@ -75,6 +76,7 @@ type Service struct {
 }
 
 // New creates and registers the Xatu service with the node.
+// Returns the service instance so the caller can access it for API registration.
 func New(
 	n *node.Node,
 	db kv.TemporalRoDB,
@@ -83,7 +85,7 @@ func New(
 	engine rules.EngineReader,
 	config Config,
 	logger log.Logger,
-) error {
+) (*Service, error) {
 	svc := &Service{
 		config:      config,
 		db:          db,
@@ -95,7 +97,7 @@ func New(
 
 	n.RegisterLifecycle(svc)
 
-	return nil
+	return svc, nil
 }
 
 // loadConfig loads the config from file.
@@ -122,6 +124,12 @@ func loadConfig(file string) (*config.Config, error) {
 
 // Start implements node.Lifecycle, starting the Xatu service.
 func (s *Service) Start() error {
+	// Simulation-only mode: skip execution-processor setup, only enable RPC endpoints
+	if s.config.SimulationOnly {
+		s.log.Info("Xatu service started in simulation-only mode")
+		return nil
+	}
+
 	// Load config from file
 	cfg, err := loadConfig(s.config.ConfigPath)
 	if err != nil {

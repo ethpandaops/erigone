@@ -9,6 +9,7 @@ import (
 	"github.com/erigontech/erigon/execution/chain"
 	"github.com/erigontech/erigon/execution/protocol/rules"
 	"github.com/erigontech/erigon/node"
+	"github.com/erigontech/erigon/rpc"
 )
 
 // initXatu is a no-op stub when not built with the embedded tag.
@@ -21,6 +22,6 @@ func initXatu(
 	_ rules.EngineReader,
 	_ string,
 	_ log.Logger,
-) error {
-	return nil
+) ([]rpc.API, error) {
+	return nil, nil
 }
