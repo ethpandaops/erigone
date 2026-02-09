@@ -484,7 +484,8 @@ func (s *Service) executeSingleTransaction(
 
 // GetGasSchedule returns the gas schedule for a specific block's fork.
 // Only parameters valid for that fork are included.
-func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*CustomGasSchedule, error) {
+// Returns values and descriptions for each gas parameter.
+func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*GasScheduleResponse, error) {
 	tx, err := s.db.BeginTemporalRo(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -513,5 +514,5 @@ func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*Cust
 	}
 	_ = blockCtx // Not needed, just used to get chainRules
 
-	return GasScheduleForRules(chainRules), nil
+	return GasScheduleResponseForRules(chainRules), nil
 }

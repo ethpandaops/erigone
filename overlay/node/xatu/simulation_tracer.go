@@ -67,6 +67,13 @@ type SimulationTracer struct {
 	callStack  []callFrame // Stack of active calls
 	callErrors []CallError // Errors that occurred during execution
 
+	// Pending CALL tracking - for accurate gas attribution
+	// CALL-family opcodes report cost = overhead + childGas in OnOpcode,
+	// but we only want to track overhead. OnEnter tells us childGas.
+	pendingCallCost  uint64 // Cost from OnOpcode, resolved in OnEnter
+	pendingCallDepth int    // Depth where the CALL was made
+	pendingCallType  string // Opcode name (CALL, STATICCALL, etc.)
+
 	// VM context
 	env *tracing.VMContext
 }
@@ -101,7 +108,14 @@ func (t *SimulationTracer) OnTxStart(env *tracing.VMContext, txn types.Transacti
 
 // OnTxEnd is called when a transaction ends.
 func (t *SimulationTracer) OnTxEnd(_ *types.Receipt, _ error) {
-	// Gas totals are already computed in OnOpcode
+	// Flush any unresolved pending CALL (edge case: tx ends abnormally after CALL)
+	if t.pendingCallCost > 0 {
+		t.gasUsed[t.pendingCallType] += t.pendingCallCost
+		t.totalGasUsed += t.pendingCallCost
+		t.pendingCallCost = 0
+		t.pendingCallDepth = 0
+		t.pendingCallType = ""
+	}
 }
 
 // OnEnter is called when a call frame is entered.
@@ -110,6 +124,23 @@ func (t *SimulationTracer) OnEnter(depth int, typ byte, from accounts.Address, t
 	typName := opcodeStrings[typ]
 	if typName == "" {
 		typName = "UNKNOWN"
+	}
+
+	// Resolve pending CALL gas - compute overhead by subtracting child allocation
+	// OnEnter depth is the SAME as parent's depth (evm.depth before Run() increments it)
+	if t.pendingCallCost > 0 && t.pendingCallDepth == depth {
+		// overhead = total cost charged - gas allocated to child
+		var overhead uint64
+		if t.pendingCallCost > gas {
+			overhead = t.pendingCallCost - gas
+		}
+		// Attribute overhead to the CALL opcode
+		t.gasUsed[t.pendingCallType] += overhead
+		t.totalGasUsed += overhead
+		// Clear pending
+		t.pendingCallCost = 0
+		t.pendingCallDepth = 0
+		t.pendingCallType = ""
 	}
 
 	// Truncate address to first 20 chars (0x + 18 hex chars)
@@ -155,11 +186,36 @@ func (t *SimulationTracer) OnExit(depth int, output []byte, gasUsed uint64, err 
 // OnOpcode captures each EVM opcode execution and records the gas cost.
 // The cost parameter is the actual gas charged by the EVM, which will reflect
 // the custom JumpTable gas costs if one is being used.
+//
+// For CALL-family opcodes (CALL, STATICCALL, DELEGATECALL, CALLCODE), the cost
+// includes gas allocated to the child frame. We defer gas tracking to OnEnter
+// where we can compute: overhead = cost - childGas.
 func (t *SimulationTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
 	opName := opcodeStrings[opcode]
 
-	// Track counts and gas
+	// Check if there's an unresolved pending CALL at the same depth
+	// This happens when a CALL fails before OnEnter (e.g., insufficient balance)
+	if t.pendingCallCost > 0 && t.pendingCallDepth == depth {
+		// Previous CALL failed without creating child frame - attribute full cost
+		t.gasUsed[t.pendingCallType] += t.pendingCallCost
+		t.totalGasUsed += t.pendingCallCost
+		t.pendingCallCost = 0
+		t.pendingCallDepth = 0
+		t.pendingCallType = ""
+	}
+
+	// Always track opcode counts
 	t.opcodeCounts[opName]++
+
+	// For CALL-family opcodes, defer gas tracking to OnEnter
+	// Opcodes: CALL=0xF1, CALLCODE=0xF2, DELEGATECALL=0xF4, STATICCALL=0xFA
+	if opcode == 0xF1 || opcode == 0xF2 || opcode == 0xF4 || opcode == 0xFA {
+		t.pendingCallCost = cost
+		t.pendingCallDepth = depth
+		t.pendingCallType = opName
+		return
+	}
+
 	t.gasUsed[opName] += cost
 	t.totalGasUsed += cost
 }
@@ -222,6 +278,9 @@ func (t *SimulationTracer) Reset() {
 	t.totalGasUsed = 0
 	t.callStack = t.callStack[:0]
 	t.callErrors = t.callErrors[:0]
+	t.pendingCallCost = 0
+	t.pendingCallDepth = 0
+	t.pendingCallType = ""
 }
 
 // Note: opcodeStrings is defined in tracer.go and shared across the package.
