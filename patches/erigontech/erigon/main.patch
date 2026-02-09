@@ -25,6 +25,23 @@ index 0abebc9..213432c 100644
  	if ctx.Bool(ExperimentalConcurrentCommitmentFlag.Name) {
  		// cfg.ExperimentalConcurrentCommitment = true
  		statecfg.ExperimentalConcurrentCommitment = true
+diff --git a/common/math/integer.go b/common/math/integer.go
+index dc353bf..52a46f1 100644
+--- a/common/math/integer.go
++++ b/common/math/integer.go
+@@ -124,3 +124,12 @@ func SafeAdd(x, y uint64) (uint64, bool) {
+ 	sum, carryOut := bits.Add64(x, y, 0)
+ 	return sum, carryOut != 0
+ }
++
++// SafeSubClamp returns x-y, clamped to 0 if y > x (prevents underflow).
++// Used by gas repricing simulation where custom values may cause underflow.
++func SafeSubClamp(x, y uint64) uint64 {
++	if y > x {
++		return 0
++	}
++	return x - y
++}
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
 index d69c22b..7fa8c74 100644
 --- a/execution/vm/evm.go
@@ -401,7 +418,7 @@ index e035ed2..2bc3c31 100644
  	frontierInstructionSet         = newFrontierInstructionSet()
  	homesteadInstructionSet        = newHomesteadInstructionSet()
 diff --git a/execution/vm/operations_acl.go b/execution/vm/operations_acl.go
-index 4b73547..2046ff2 100644
+index 4b73547..b953071 100644
 --- a/execution/vm/operations_acl.go
 +++ b/execution/vm/operations_acl.go
 @@ -52,7 +52,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
@@ -413,7 +430,7 @@ index 4b73547..2046ff2 100644
  		}
  		var value uint256.Int
  		value.Set(y)
-@@ -60,21 +60,21 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+@@ -60,21 +60,22 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  		if current.Eq(&value) { // noop (1)
  			// EIP 2200 original clause:
  			//		return params.SloadGasEIP2200, nil
@@ -434,16 +451,18 @@ index 4b73547..2046ff2 100644
  			// EIP-2200 original clause:
  			//		return params.SstoreResetGasEIP2200, nil // write existing slot (2.1.2)
 -			return cost + (params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929), nil // write existing slot (2.1.2)
-+			return cost + (evm.GasSchedule.GetOr(GasKeySstoreReset, params.SstoreResetGasEIP2200) - evm.GasSchedule.GetOr(GasKeySloadCold, params.ColdSloadCostEIP2929)), nil // write existing slot (2.1.2)
++			// Use SafeSubClamp to prevent underflow with custom gas schedules
++			return cost + math.SafeSubClamp(evm.GasSchedule.GetOr(GasKeySstoreReset, params.SstoreResetGasEIP2200), evm.GasSchedule.GetOr(GasKeySloadCold, params.ColdSloadCostEIP2929)), nil // write existing slot (2.1.2)
  		}
  		if !original.IsZero() {
  			if current.IsZero() { // recreate slot (2.2.1.1)
-@@ -87,19 +87,19 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+@@ -87,19 +88,21 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  			if original.IsZero() { // reset to original inexistent slot (2.2.2.1)
  				// EIP 2200 Original clause:
  				//evm.StateDB.AddRefund(params.SstoreSetGasEIP2200 - params.SloadGasEIP2200)
 -				evm.IntraBlockState().AddRefund(params.SstoreSetGasEIP2200 - params.WarmStorageReadCostEIP2929)
-+				evm.IntraBlockState().AddRefund(evm.GasSchedule.GetOr(GasKeySstoreSet, params.SstoreSetGasEIP2200) - evm.GasSchedule.GetOr(GasKeySloadWarm, params.WarmStorageReadCostEIP2929))
++				// Use SafeSubClamp to prevent underflow with custom gas schedules
++				evm.IntraBlockState().AddRefund(math.SafeSubClamp(evm.GasSchedule.GetOr(GasKeySstoreSet, params.SstoreSetGasEIP2200), evm.GasSchedule.GetOr(GasKeySloadWarm, params.WarmStorageReadCostEIP2929)))
  			} else { // reset to original existing slot (2.2.2.2)
  				// EIP 2200 Original clause:
  				//	evm.StateDB.AddRefund(params.SstoreResetGasEIP2200 - params.SloadGasEIP2200)
@@ -451,7 +470,8 @@ index 4b73547..2046ff2 100644
  				// - SLOAD_GAS redefined as WARM_STORAGE_READ_COST
  				// Final: (5000 - COLD_SLOAD_COST) - WARM_STORAGE_READ_COST
 -				evm.IntraBlockState().AddRefund((params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929) - params.WarmStorageReadCostEIP2929)
-+				evm.IntraBlockState().AddRefund((evm.GasSchedule.GetOr(GasKeySstoreReset, params.SstoreResetGasEIP2200) - evm.GasSchedule.GetOr(GasKeySloadCold, params.ColdSloadCostEIP2929)) - evm.GasSchedule.GetOr(GasKeySloadWarm, params.WarmStorageReadCostEIP2929))
++				// Use SafeSubClamp to prevent underflow with custom gas schedules
++				evm.IntraBlockState().AddRefund(math.SafeSubClamp(math.SafeSubClamp(evm.GasSchedule.GetOr(GasKeySstoreReset, params.SstoreResetGasEIP2200), evm.GasSchedule.GetOr(GasKeySloadCold, params.ColdSloadCostEIP2929)), evm.GasSchedule.GetOr(GasKeySloadWarm, params.WarmStorageReadCostEIP2929)))
  			}
  		}
  		// EIP-2200 original clause:
@@ -461,7 +481,7 @@ index 4b73547..2046ff2 100644
  	}
  }
  
-@@ -113,9 +113,9 @@ func gasSLoadEIP2929(evm *EVM, callContext *CallContext, scopeGas uint64, memory
+@@ -113,9 +116,9 @@ func gasSLoadEIP2929(evm *EVM, callContext *CallContext, scopeGas uint64, memory
  	// If the caller cannot afford the cost, this change will be rolled back
  	// If he does afford it, we can skip checking the same thing later on, during execution
  	if _, slotMod := evm.IntraBlockState().AddSlotToAccessList(callContext.Address(), accounts.InternKey(loc.Bytes32())); slotMod {
@@ -473,7 +493,7 @@ index 4b73547..2046ff2 100644
  }
  
  // gasExtCodeCopyEIP2929 implements extcodecopy according to EIP-2929
-@@ -134,7 +134,7 @@ func gasExtCodeCopyEIP2929(evm *EVM, callContext *CallContext, scopeGas uint64,
+@@ -134,7 +137,7 @@ func gasExtCodeCopyEIP2929(evm *EVM, callContext *CallContext, scopeGas uint64,
  	if evm.IntraBlockState().AddAddressToAccessList(addr) {
  		var overflow bool
  		// We charge (cold-warm), since 'warm' is already charged as constantGas
@@ -482,7 +502,7 @@ index 4b73547..2046ff2 100644
  			return 0, ErrGasUintOverflow
  		}
  		return gas, nil
-@@ -154,7 +154,7 @@ func gasEip2929AccountCheck(evm *EVM, callContext *CallContext, scopeGas uint64,
+@@ -154,7 +157,7 @@ func gasEip2929AccountCheck(evm *EVM, callContext *CallContext, scopeGas uint64,
  	// If the caller cannot afford the cost, this change will be rolled back
  	if evm.IntraBlockState().AddAddressToAccessList(addr) {
  		// The warm storage read cost is already charged as constantGas
@@ -491,7 +511,7 @@ index 4b73547..2046ff2 100644
  	}
  	return 0, nil
  }
-@@ -164,7 +164,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
+@@ -164,7 +167,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
  		addr := accounts.InternAddress(callContext.Stack.Back(1).Bytes20())
  		// The WarmStorageReadCostEIP2929 (100) is already deducted in the form of a constant cost, so
  		// the cost to charge for cold access, if any, is Cold - Warm
@@ -500,7 +520,7 @@ index 4b73547..2046ff2 100644
  		warmAccess := evm.IntraBlockState().AddressInAccessList(addr)
  		if !warmAccess {
  			// Charge the remaining difference here already, to correctly calculate available
-@@ -230,7 +230,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
+@@ -230,7 +233,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
  		)
  		// If the caller cannot afford the cost, this change will be rolled back
  		if !evm.IntraBlockState().AddressInAccessList(address) {
@@ -509,7 +529,7 @@ index 4b73547..2046ff2 100644
  			if _, ok := useGas(scopeGas, gas, evm.Config().Tracer, tracing.GasChangeCallStorageColdAccess); !ok {
  				return 0, ErrOutOfGas
  			}
-@@ -248,7 +248,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
+@@ -248,7 +251,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
  		}
  		evm.IntraBlockState().MarkAddressAccess(address, false)
  		if empty && !balance.IsZero() {
@@ -518,7 +538,7 @@ index 4b73547..2046ff2 100644
  		}
  
  		hasSelfdestructed, err := evm.IntraBlockState().HasSelfdestructed(callContext.Address())
-@@ -279,7 +279,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -279,7 +282,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		if !evm.intraBlockState.AddressInAccessList(addr) {
  			// The WarmStorageReadCostEIP2929 (100) is already deducted in the form of a constant cost, so
  			// the cost to charge for cold access, if any, is Cold - Warm
@@ -527,7 +547,7 @@ index 4b73547..2046ff2 100644
  			// Charge the remaining difference here already, to correctly calculate available
  			// gas for call
  			if availableGas < accessGas {
-@@ -327,9 +327,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -327,9 +330,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		var delegationGas uint64
  		if ok {
  			if !evm.intraBlockState.AddressInAccessList(dd) {
