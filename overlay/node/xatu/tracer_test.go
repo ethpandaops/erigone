@@ -256,6 +256,231 @@ func TestGasCostSanitization(t *testing.T) {
 	}
 }
 
+// TestGasUsedComputation verifies that GasUsed is correctly computed for
+// sequential opcodes at the same depth.
+//
+// For consecutive opcodes at the same depth:
+//
+//	GasUsed = prevLog.Gas - currentLog.Gas
+//
+// This eliminates the need for post-processing in execution-processor.
+func TestGasUsedComputation(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+	ctx := newMockOpContext(10)
+
+	// Simulate 3 sequential opcodes at depth 1
+	// Gas decreases: 10000 -> 9997 -> 9990 -> 9980
+	//
+	// Opcode 1: gas=10000, cost=3  -> GasUsed should be 10000-9997=3
+	// Opcode 2: gas=9997,  cost=7  -> GasUsed should be 9997-9990=7
+	// Opcode 3: gas=9990,  cost=10 -> GasUsed stays at cost=10 (no next opcode)
+
+	tracer.OnOpcode(0, byte(vm.ADD), 10000, 3, ctx, nil, 1, nil)
+	tracer.OnOpcode(1, byte(vm.MUL), 9997, 7, ctx, nil, 1, nil)
+	tracer.OnOpcode(2, byte(vm.SUB), 9990, 10, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if len(logs) != 3 {
+		t.Fatalf("expected 3 logs, got %d", len(logs))
+	}
+
+	// Opcode 1: GasUsed = 10000 - 9997 = 3
+	if logs[0].GasUsed != 3 {
+		t.Errorf("log[0].GasUsed = %d, want 3", logs[0].GasUsed)
+	}
+
+	// Opcode 2: GasUsed = 9997 - 9990 = 7
+	if logs[1].GasUsed != 7 {
+		t.Errorf("log[1].GasUsed = %d, want 7", logs[1].GasUsed)
+	}
+
+	// Opcode 3: GasUsed = cost (no next opcode to compute from)
+	if logs[2].GasUsed != 10 {
+		t.Errorf("log[2].GasUsed = %d, want 10", logs[2].GasUsed)
+	}
+}
+
+// TestGasUsedSanitization verifies that GasUsed is capped for out-of-gas
+// opcodes where Erigon reports inflated theoretical costs.
+//
+// The bug: When an opcode fails with "out of gas", Erigon reports the
+// theoretical computed cost (e.g., 3.69 trillion for memory expansion)
+// rather than the actual gas consumed (which is at most the remaining gas).
+//
+// The fix: GasUsed is capped at available gas.
+func TestGasUsedSanitization(t *testing.T) {
+	tests := []struct {
+		name            string
+		gas             uint64
+		cost            uint64 // theoretical cost from Erigon
+		hasError        bool
+		expectedGasUsed uint64
+	}{
+		{
+			name:            "normal opcode - GasUsed equals cost",
+			gas:             10000,
+			cost:            3,
+			hasError:        false,
+			expectedGasUsed: 3,
+		},
+		{
+			name:            "OOG with massive theoretical cost",
+			gas:             340375,
+			cost:            3688376207808, // Actual value from block 24276761
+			hasError:        true,
+			expectedGasUsed: 340375, // Capped to remaining gas
+		},
+		{
+			name:            "OOG with moderate inflation",
+			gas:             137304,
+			cost:            18290742255, // From block 24142418
+			hasError:        true,
+			expectedGasUsed: 137304,
+		},
+		{
+			name:            "cost exactly equals gas - no change",
+			gas:             5000,
+			cost:            5000,
+			hasError:        true,
+			expectedGasUsed: 5000,
+		},
+		{
+			name:            "cost slightly exceeds gas",
+			gas:             1000,
+			cost:            1001,
+			hasError:        true,
+			expectedGasUsed: 1000,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer := NewStructLogTracer(StructLogConfig{})
+			ctx := newMockOpContext(10)
+
+			var err error
+			if tc.hasError {
+				err = vm.ErrOutOfGas
+			}
+
+			tracer.OnOpcode(
+				0,              // pc
+				byte(vm.MLOAD), // opcode (memory ops often cause OOG)
+				tc.gas,         // gas remaining
+				tc.cost,        // theoretical cost (possibly inflated)
+				ctx,            // scope
+				nil,            // rData
+				1,              // depth
+				err,            // error
+			)
+
+			logs := tracer.StructLogs()
+			if len(logs) != 1 {
+				t.Fatalf("expected 1 log, got %d", len(logs))
+			}
+
+			if logs[0].GasUsed != tc.expectedGasUsed {
+				t.Errorf("GasUsed = %d, want %d", logs[0].GasUsed, tc.expectedGasUsed)
+			}
+
+			// Also verify GasCost is capped
+			if logs[0].GasCost > logs[0].Gas {
+				t.Errorf("GasCost (%d) exceeds Gas (%d)", logs[0].GasCost, logs[0].Gas)
+			}
+		})
+	}
+}
+
+// TestGasUsedAcrossDepths verifies GasUsed behavior when call depth changes.
+//
+// When returning from a deeper call, the pending log at that depth cannot
+// have its GasUsed computed (no next opcode at same depth), so it keeps
+// the capped cost value.
+func TestGasUsedAcrossDepths(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+	ctx := newMockOpContext(10)
+
+	// Simulate: depth 1 -> depth 2 -> back to depth 1
+	//
+	// Op1 (depth 1): gas=10000, cost=100 -> GasUsed computed when Op4 arrives
+	// Op2 (depth 2): gas=9000,  cost=50  -> GasUsed computed when Op3 arrives
+	// Op3 (depth 2): gas=8950,  cost=30  -> GasUsed stays at cost (returns to depth 1)
+	// Op4 (depth 1): gas=8900,  cost=20  -> Updates Op1's GasUsed
+
+	tracer.OnOpcode(0, byte(vm.CALL), 10000, 100, ctx, nil, 1, nil)
+	tracer.OnOpcode(1, byte(vm.ADD), 9000, 50, ctx, nil, 2, nil)
+	tracer.OnOpcode(2, byte(vm.MUL), 8950, 30, ctx, nil, 2, nil)
+	tracer.OnOpcode(3, byte(vm.POP), 8900, 20, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if len(logs) != 4 {
+		t.Fatalf("expected 4 logs, got %d", len(logs))
+	}
+
+	// Op1 (depth 1): GasUsed = 10000 - 8900 = 1100
+	// This is the gas consumed by the entire CALL (including subcall)
+	if logs[0].GasUsed != 1100 {
+		t.Errorf("log[0].GasUsed = %d, want 1100", logs[0].GasUsed)
+	}
+
+	// Op2 (depth 2): GasUsed = 9000 - 8950 = 50
+	if logs[1].GasUsed != 50 {
+		t.Errorf("log[1].GasUsed = %d, want 50", logs[1].GasUsed)
+	}
+
+	// Op3 (depth 2): Last at this depth, GasUsed = cost = 30
+	if logs[2].GasUsed != 30 {
+		t.Errorf("log[2].GasUsed = %d, want 30", logs[2].GasUsed)
+	}
+
+	// Op4 (depth 1): Last opcode, GasUsed = cost = 20
+	if logs[3].GasUsed != 20 {
+		t.Errorf("log[3].GasUsed = %d, want 20", logs[3].GasUsed)
+	}
+}
+
+// TestGasUsedOOGAtDepth verifies that an OOG opcode at a nested depth
+// has its GasUsed correctly capped.
+func TestGasUsedOOGAtDepth(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+	ctx := newMockOpContext(10)
+
+	// Simulate: depth 1 -> depth 2 (OOG) -> back to depth 1
+	//
+	// Op1 (depth 1): gas=10000, cost=100
+	// Op2 (depth 2): gas=5000, cost=HUGE (OOG) -> GasUsed capped to 5000
+	// Op3 (depth 1): gas=4900, cost=50
+
+	tracer.OnOpcode(0, byte(vm.CALL), 10000, 100, ctx, nil, 1, nil)
+	tracer.OnOpcode(1, byte(vm.MLOAD), 5000, 999999999999, ctx, nil, 2, vm.ErrOutOfGas)
+	tracer.OnOpcode(2, byte(vm.POP), 4900, 50, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if len(logs) != 3 {
+		t.Fatalf("expected 3 logs, got %d", len(logs))
+	}
+
+	// Op1: GasUsed = 10000 - 4900 = 5100
+	if logs[0].GasUsed != 5100 {
+		t.Errorf("log[0].GasUsed = %d, want 5100", logs[0].GasUsed)
+	}
+
+	// Op2: OOG opcode - GasUsed capped at available gas
+	if logs[1].GasUsed != 5000 {
+		t.Errorf("log[1].GasUsed = %d, want 5000 (capped)", logs[1].GasUsed)
+	}
+
+	// Also verify GasCost is capped
+	if logs[1].GasCost != 5000 {
+		t.Errorf("log[1].GasCost = %d, want 5000 (capped)", logs[1].GasCost)
+	}
+
+	// Op3: Last at depth 1, GasUsed = cost
+	if logs[2].GasUsed != 50 {
+		t.Errorf("log[2].GasUsed = %d, want 50", logs[2].GasUsed)
+	}
+}
+
 // =============================================================================
 // StructLogTracer Benchmarks
 // =============================================================================

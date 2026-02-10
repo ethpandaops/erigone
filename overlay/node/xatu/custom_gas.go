@@ -147,9 +147,9 @@ var gasDescriptions = map[string]string{
 	"MSTORE":  "Store 32 bytes to memory. Base cost only; memory expansion charged separately via MEMORY.",
 	"MSTORE8": "Store 1 byte to memory. Base cost only; memory expansion charged separately via MEMORY.",
 	"MSIZE":   "Get current memory size in bytes. Fixed cost.",
-	"MCOPY":   "Copy memory regions. Base cost; also uses COPY for per-word cost and MEMORY for expansion.",
-	"MEMORY":  "Linear coefficient for memory expansion. Total cost = MEMORY × words + words²÷512. Only the linear part is configurable; the quadratic part is fixed.",
-	"COPY":    "Per-word cost for memory copy operations (CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY).",
+	"MCOPY":   "Copy memory regions. Base cost only. Total = MCOPY + (COPY × words) + memory expansion. To change per-word cost, modify COPY instead.",
+	"MEMORY":  "Linear coefficient for memory expansion. Total cost = MEMORY × words + words²÷512. Applies to all memory-expanding operations. The quadratic part is fixed.",
+	"COPY":    "Per-word (32 bytes) cost for ALL copy operations. Affects: CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY. Change this to adjust copy costs globally.",
 
 	// Storage
 	"SLOAD_COLD":   "Reading storage slot for first time in transaction. Post-Berlin (EIP-2929).",
@@ -171,24 +171,25 @@ var gasDescriptions = map[string]string{
 	"CALL_NEW_ACCOUNT": "Additional cost when CALL sends value to a non-existent account, creating it.",
 
 	// Contract Creation
-	"CREATE":                 "Base cost for CREATE. Additional costs: INIT_CODE_WORD per word of init code, memory expansion, and code deposit (200 gas per byte stored).",
-	"CREATE2":                "Base cost for CREATE2. Additional costs: INIT_CODE_WORD, KECCAK256_WORD for address derivation, memory expansion, and code deposit.",
-	"INIT_CODE_WORD":         "Per-word cost for contract init code in CREATE/CREATE2. (EIP-3860)",
+	"CREATE":                 "Base cost only. Total = CREATE + (INIT_CODE_WORD × words) + memory expansion + (CREATE_DATA × code bytes).",
+	"CREATE2":                "Base cost only. Total = CREATE2 + (INIT_CODE_WORD × words) + (KECCAK256_WORD × words) + memory expansion + (CREATE_DATA × code bytes).",
+	"INIT_CODE_WORD":         "Per-word (32 bytes) cost for init code in CREATE/CREATE2. Applies to both operations. (EIP-3860)",
+	"CREATE_DATA":            "Per-byte cost for storing deployed contract code. Charged based on the size of returned bytecode from contract creation.",
 	"CREATE_BY_SELFDESTRUCT": "Cost when SELFDESTRUCT sends funds to non-existent account, creating it.",
 
 	// External Code
 	"EXTCODESIZE": "Get code size of external account. Base cost; first access to address adds CALL_COLD.",
-	"EXTCODECOPY": "Copy external account code to memory. Base cost; uses COPY for per-word cost, MEMORY for expansion. First access adds CALL_COLD.",
+	"EXTCODECOPY": "Copy external account code to memory. Base cost only. Total = EXTCODECOPY + (COPY × words) + memory expansion. First access adds CALL_COLD.",
 	"EXTCODEHASH": "Get code hash of external account. Base cost; first access to address adds CALL_COLD.",
 	"CODESIZE":    "Get size of current contract's code. Fixed cost.",
-	"CODECOPY":    "Copy current contract's code to memory. Base cost; uses COPY for per-word cost and MEMORY for expansion.",
+	"CODECOPY":    "Copy current contract's code to memory. Base cost only. Total = CODECOPY + (COPY × words) + memory expansion.",
 
 	// Call Data
 	"CALLDATALOAD":   "Load 32 bytes from call input data. Fixed cost.",
 	"CALLDATASIZE":   "Get size of call input data. Fixed cost.",
-	"CALLDATACOPY":   "Copy call input data to memory. Base cost; uses COPY for per-word cost and MEMORY for expansion.",
+	"CALLDATACOPY":   "Copy call input data to memory. Base cost only. Total = CALLDATACOPY + (COPY × words) + memory expansion.",
 	"RETURNDATASIZE": "Get size of return data from last external call. Fixed cost.",
-	"RETURNDATACOPY": "Copy return data to memory. Base cost; uses COPY for per-word cost and MEMORY for expansion.",
+	"RETURNDATACOPY": "Copy return data to memory. Base cost only. Total = RETURNDATACOPY + (COPY × words) + memory expansion.",
 
 	// Block Information
 	"BLOCKHASH":   "Get hash of one of the 256 most recent blocks. Fixed cost.",
@@ -223,18 +224,18 @@ var gasDescriptions = map[string]string{
 	"INVALID":  "Designated invalid instruction. Consumes all remaining gas.",
 
 	// Logging
-	"LOG0":      "Append log with 0 topics. Uses LOG base + LOG_DATA per byte.",
-	"LOG1":      "Append log with 1 topic. Uses LOG base + LOG_TOPIC + LOG_DATA per byte.",
-	"LOG2":      "Append log with 2 topics. Uses LOG base + 2×LOG_TOPIC + LOG_DATA per byte.",
-	"LOG3":      "Append log with 3 topics. Uses LOG base + 3×LOG_TOPIC + LOG_DATA per byte.",
-	"LOG4":      "Append log with 4 topics. Uses LOG base + 4×LOG_TOPIC + LOG_DATA per byte.",
-	"LOG":       "Base cost for all LOG operations.",
-	"LOG_TOPIC": "Additional cost per topic in LOG1-LOG4.",
-	"LOG_DATA":  "Per-byte cost for log data.",
+	"LOG0":      "Append log with 0 topics. Total = LOG + (LOG_DATA × bytes) + memory expansion.",
+	"LOG1":      "Append log with 1 topic. Total = LOG + LOG_TOPIC + (LOG_DATA × bytes) + memory expansion.",
+	"LOG2":      "Append log with 2 topics. Total = LOG + 2×LOG_TOPIC + (LOG_DATA × bytes) + memory expansion.",
+	"LOG3":      "Append log with 3 topics. Total = LOG + 3×LOG_TOPIC + (LOG_DATA × bytes) + memory expansion.",
+	"LOG4":      "Append log with 4 topics. Total = LOG + 4×LOG_TOPIC + (LOG_DATA × bytes) + memory expansion.",
+	"LOG":       "Base cost for ALL log operations (LOG0-LOG4). Change this to adjust logging costs globally.",
+	"LOG_TOPIC": "Per-topic cost added to LOG1-LOG4. Change this to adjust topic costs globally.",
+	"LOG_DATA":  "Per-byte cost for log data in ALL log operations. Change this to adjust data costs globally.",
 
 	// Hashing
-	"KECCAK256":      "Base cost for KECCAK256 hash operation.",
-	"KECCAK256_WORD": "Per-word (32 bytes) cost for data being hashed.",
+	"KECCAK256":      "Hash operation. Base cost only. Total = KECCAK256 + (KECCAK256_WORD × words) + memory expansion.",
+	"KECCAK256_WORD": "Per-word (32 bytes) cost for data being hashed. Total KECCAK256 cost = KECCAK256 + (KECCAK256_WORD × words).",
 
 	// Self-destruct
 	"SELFDESTRUCT": "Mark contract for destruction. Base cost; adds CALL_COLD if recipient is cold, CREATE_BY_SELFDESTRUCT if recipient doesn't exist.",
@@ -271,6 +272,7 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	schedule.Overrides[vm.GasKeyCallNewAccount] = params.CallNewAccountGas
 	schedule.Overrides[vm.GasKeyCreateBySelfDestruct] = params.CreateBySelfdestructGas
 	schedule.Overrides[vm.GasKeyInitCodeWord] = params.InitCodeWordGas
+	schedule.Overrides[vm.GasKeyCreateData] = params.CreateDataGas
 
 	// Fork-specific defaults
 	if rules.IsSpuriousDragon {

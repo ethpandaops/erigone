@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # erigone-build.sh - Clone upstream erigon, apply patches + overlay, and build
-# Usage: ./erigone-build.sh -r <org/repo> -b <branch> [--ci] [--skip-build]
+# Usage: ./erigone-build.sh -r <org/repo> -b <branch> [-c <commit>] [--ci] [--skip-build]
 
 set -e
 
@@ -9,6 +9,7 @@ set -e
 ORG=""
 REPO=""
 BRANCH=""
+COMMIT=""
 CI_MODE=false
 SKIP_BUILD=false
 
@@ -29,6 +30,10 @@ while [ $# -gt 0 ]; do
             BRANCH="$2"
             shift 2
             ;;
+        -c|--commit)
+            COMMIT="$2"
+            shift 2
+            ;;
         --ci)
             CI_MODE=true
             shift
@@ -39,7 +44,8 @@ while [ $# -gt 0 ]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 -r org/repo -b branch [--ci] [--skip-build]"
+            echo "Usage: $0 -r org/repo -b branch [-c commit] [--ci] [--skip-build]"
+            echo "  -c, --commit: Pin to specific commit SHA (optional)"
             echo "  --ci: Run in CI mode (non-interactive, auto-clean, auto-update patches)"
             echo "  --skip-build: Skip the build step (useful for Docker builds)"
             exit 1
@@ -50,12 +56,17 @@ done
 # Validate required arguments
 if [ -z "$ORG" ] || [ -z "$REPO" ] || [ -z "$BRANCH" ]; then
     echo "Error: Missing required arguments"
-    echo "Usage: $0 -r org/repo -b branch [--ci] [--skip-build]"
+    echo "Usage: $0 -r org/repo -b branch [-c commit] [--ci] [--skip-build]"
     echo "Example: $0 -r erigontech/erigon -b main"
+    echo "Example: $0 -r erigontech/erigon -b main -c 5aff1fcb75befcde2f956a5b38a9deec5cc4123c"
     exit 1
 fi
 
-echo "Testing with repository: $ORG/$REPO on branch: $BRANCH"
+if [ -n "$COMMIT" ]; then
+    echo "Testing with repository: $ORG/$REPO on branch: $BRANCH at commit: $COMMIT"
+else
+    echo "Testing with repository: $ORG/$REPO on branch: $BRANCH"
+fi
 
 # Store the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,7 +86,12 @@ if [ -d "erigon" ]; then
             echo "Removing existing erigon directory..."
             rm -rf erigon
             echo "Cloning repository..."
-            git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+            if [ -n "$COMMIT" ]; then
+                git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+                cd erigon && git checkout "$COMMIT" && cd ..
+            else
+                git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+            fi
         else
             CURRENT_BRANCH=$(git branch --show-current)
             if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
@@ -107,19 +123,31 @@ if [ -d "erigon" ]; then
                 git checkout "$BRANCH"
             fi
 
-            # Update to latest
-            echo "Checking for updates..."
-            git fetch --depth 1 origin "$BRANCH" || true
-
-            if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+            # Update to target (specific commit or latest)
+            if [ -n "$COMMIT" ]; then
+                echo "Checking for target commit..."
                 LOCAL=$(git rev-parse HEAD)
-                REMOTE=$(git rev-parse "origin/$BRANCH")
-
-                if [ "$LOCAL" != "$REMOTE" ]; then
-                    echo "Local branch is behind remote, pulling latest..."
-                    git pull --depth 1 origin "$BRANCH"
+                if [ "$LOCAL" != "$COMMIT" ]; then
+                    echo "Fetching and checking out commit $COMMIT..."
+                    git fetch origin "$BRANCH"
+                    git checkout "$COMMIT"
                 else
-                    echo "Already on latest commit"
+                    echo "Already on target commit"
+                fi
+            else
+                echo "Checking for updates..."
+                git fetch --depth 1 origin "$BRANCH" || true
+
+                if git rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+                    LOCAL=$(git rev-parse HEAD)
+                    REMOTE=$(git rev-parse "origin/$BRANCH")
+
+                    if [ "$LOCAL" != "$REMOTE" ]; then
+                        echo "Local branch is behind remote, pulling latest..."
+                        git pull --depth 1 origin "$BRANCH"
+                    else
+                        echo "Already on latest commit"
+                    fi
                 fi
             fi
 
@@ -130,11 +158,21 @@ if [ -d "erigon" ]; then
         echo "Directory exists but is not a git repository, removing..."
         rm -rf erigon
         echo "Cloning repository..."
-        git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+        if [ -n "$COMMIT" ]; then
+            git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+            cd erigon && git checkout "$COMMIT" && cd ..
+        else
+            git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+        fi
     fi
 else
     echo "Cloning repository..."
-    git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+    if [ -n "$COMMIT" ]; then
+        git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+        cd erigon && git checkout "$COMMIT" && cd ..
+    else
+        git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+    fi
 fi
 
 # Clean erigon directory if it has leftover changes
