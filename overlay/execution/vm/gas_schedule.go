@@ -64,4 +64,5 @@ const (
 	GasKeyExpByte              = "EXP_BYTE"
 	GasKeyCreateBySelfDestruct = "CREATE_BY_SELFDESTRUCT"
 	GasKeyInitCodeWord         = "INIT_CODE_WORD"
+	GasKeyCreateData           = "CREATE_DATA"
 )

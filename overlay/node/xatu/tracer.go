@@ -198,11 +198,19 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 		Depth:   uint64(depth),
 	}
 
-	// Sanitize gasCost: it can never legitimately exceed available gas.
-	// This guards against Erigon's unsigned integer underflow bug in gas.go:callGas()
-	// where availableGas - base underflows when availableGas < base.
+	// Sanitize gas values: they can never legitimately exceed available gas.
+	// This handles two cases:
+	// 1. Erigon's unsigned integer underflow bug in gas.go:callGas() where
+	//    availableGas - base underflows when availableGas < base.
+	// 2. Out-of-gas opcodes where Erigon reports the theoretical computed cost
+	//    (e.g., 3.69 trillion for memory expansion) rather than actual gas consumed.
+	//    For OOG opcodes, the actual gas consumed is at most the remaining gas.
 	if log.GasCost > log.Gas {
 		log.GasCost = log.Gas
+	}
+
+	if log.GasUsed > log.Gas {
+		log.GasUsed = log.Gas
 	}
 
 	// OPTIMIZATION: Extract only CallToAddress for CALL-family opcodes.
