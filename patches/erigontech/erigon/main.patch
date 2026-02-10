@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 0abebc96be..213432c95d 100644
+index 06e5515..4532329 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -1152,6 +1152,12 @@ var (
@@ -26,7 +26,7 @@ index 0abebc96be..213432c95d 100644
  		// cfg.ExperimentalConcurrentCommitment = true
  		statecfg.ExperimentalConcurrentCommitment = true
 diff --git a/common/math/integer.go b/common/math/integer.go
-index dc353bf305..52a46f188f 100644
+index dc353bf..52a46f1 100644
 --- a/common/math/integer.go
 +++ b/common/math/integer.go
 @@ -124,3 +124,12 @@ func SafeAdd(x, y uint64) (uint64, bool) {
@@ -43,7 +43,7 @@ index dc353bf305..52a46f188f 100644
 +	return x - y
 +}
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
-index d69c22b338..b503e3284d 100644
+index d69c22b..b503e32 100644
 --- a/execution/vm/evm.go
 +++ b/execution/vm/evm.go
 @@ -92,6 +92,10 @@ type EVM struct {
@@ -67,7 +67,7 @@ index d69c22b338..b503e3284d 100644
  		if gasRemaining, ok = useGas(gasRemaining, createDataGas, evm.Config().Tracer, tracing.GasChangeCallCodeStorage); ok {
  			evm.intraBlockState.SetCode(address, ret)
 diff --git a/execution/vm/export_test.go b/execution/vm/export_test.go
-index 97ff0ecf39..566f9418a0 100644
+index 97ff0ec..566f941 100644
 --- a/execution/vm/export_test.go
 +++ b/execution/vm/export_test.go
 @@ -17,5 +17,5 @@
@@ -78,7 +78,7 @@ index 97ff0ecf39..566f9418a0 100644
 +	return memoryGasCost(nil, callContext, newMemSize)
  }
 diff --git a/execution/vm/gas.go b/execution/vm/gas.go
-index ff18f09095..719b0a8822 100644
+index ff18f09..719b0a8 100644
 --- a/execution/vm/gas.go
 +++ b/execution/vm/gas.go
 @@ -39,6 +39,10 @@ const (
@@ -93,7 +93,7 @@ index ff18f09095..719b0a8822 100644
  		gas := availableGas - availableGas/64
  		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150
 diff --git a/execution/vm/gas_table.go b/execution/vm/gas_table.go
-index 7bac889da6..f71e151bd4 100644
+index 7bac889..f71e151 100644
 --- a/execution/vm/gas_table.go
 +++ b/execution/vm/gas_table.go
 @@ -32,7 +32,7 @@ import (
@@ -371,7 +371,7 @@ index 7bac889da6..f71e151bd4 100644
  		}
  	}
 diff --git a/execution/vm/interpreter.go b/execution/vm/interpreter.go
-index 8f62c8de1b..6b0575a733 100644
+index 8f62c8d..6b0575a 100644
 --- a/execution/vm/interpreter.go
 +++ b/execution/vm/interpreter.go
 @@ -48,6 +48,10 @@ type Config struct {
@@ -405,7 +405,7 @@ index 8f62c8de1b..6b0575a733 100644
  	switch {
  	case chainRules.IsAmsterdam:
 diff --git a/execution/vm/jump_table.go b/execution/vm/jump_table.go
-index e035ed2a1a..2bc3c3128b 100644
+index e035ed2..2bc3c31 100644
 --- a/execution/vm/jump_table.go
 +++ b/execution/vm/jump_table.go
 @@ -53,6 +53,17 @@ type operation struct {
@@ -427,7 +427,7 @@ index e035ed2a1a..2bc3c3128b 100644
  	frontierInstructionSet         = newFrontierInstructionSet()
  	homesteadInstructionSet        = newHomesteadInstructionSet()
 diff --git a/execution/vm/operations_acl.go b/execution/vm/operations_acl.go
-index 4b7354758c..b953071ee9 100644
+index 4b73547..b953071 100644
 --- a/execution/vm/operations_acl.go
 +++ b/execution/vm/operations_acl.go
 @@ -52,7 +52,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
@@ -569,7 +569,7 @@ index 4b7354758c..b953071ee9 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index 9a745040f7..5ff4a16e89 100644
+index 9a74504..5ff4a16 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
 @@ -263,4 +263,6 @@ var DefaultFlags = []cli.Flag{
@@ -580,7 +580,7 @@ index 9a745040f7..5ff4a16e89 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 5b788acf52..2aa193609f 100644
+index 5b788ac..2aa1936 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
 @@ -1154,8 +1154,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
@@ -608,7 +608,7 @@ index 5b788acf52..2aa193609f 100644
  		interface_log_settings := silkworm.RpcInterfaceLogSettings{
  			Enabled:         config.SilkwormRpcLogEnabled,
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
-index acce9b30bd..b8e0557347 100644
+index acce9b3..b8e0557 100644
 --- a/node/ethconfig/config.go
 +++ b/node/ethconfig/config.go
 @@ -242,6 +242,8 @@ type Config struct {
