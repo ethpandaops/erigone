@@ -22,6 +22,7 @@ import (
 	"github.com/erigontech/erigon/execution/tracing"
 	"github.com/erigontech/erigon/execution/types"
 	"github.com/erigontech/erigon/execution/types/accounts"
+	"github.com/erigontech/erigon/execution/vm"
 	"github.com/holiman/uint256"
 )
 
@@ -73,6 +74,13 @@ type SimulationTracer struct {
 	pendingCallCost  uint64 // Cost from OnOpcode, resolved in OnEnter
 	pendingCallDepth int    // Depth where the CALL was made
 	pendingCallType  string // Opcode name (CALL, STATICCALL, etc.)
+
+	// Precompile tracking - gas appears as PC_<name> in the opcode breakdown
+	pendingPrecompile     bool   // True if we just entered a precompile call
+	pendingPrecompileName string // e.g. "PC_SHA256"
+
+	// Precompile address->name lookup for gas breakdown attribution
+	precompiles vm.PrecompiledContracts
 
 	// VM context
 	env *tracing.VMContext
@@ -143,6 +151,14 @@ func (t *SimulationTracer) OnEnter(depth int, typ byte, from accounts.Address, t
 		t.pendingCallType = ""
 	}
 
+	// Track precompile calls for gas breakdown attribution
+	if precompile && t.precompiles != nil {
+		if p, ok := t.precompiles[to]; ok {
+			t.pendingPrecompile = true
+			t.pendingPrecompileName = "PC_" + p.Name()
+		}
+	}
+
 	// Truncate address to first 20 chars (0x + 18 hex chars)
 	addrStr := to.String()
 	if len(addrStr) > 20 {
@@ -166,6 +182,15 @@ func (t *SimulationTracer) OnExit(depth int, output []byte, gasUsed uint64, err 
 
 	frame := t.callStack[len(t.callStack)-1]
 	t.callStack = t.callStack[:len(t.callStack)-1]
+
+	// Record precompile gas in the opcode breakdown
+	if t.pendingPrecompile {
+		t.gasUsed[t.pendingPrecompileName] += gasUsed
+		t.opcodeCounts[t.pendingPrecompileName]++
+		t.totalGasUsed += gasUsed
+		t.pendingPrecompile = false
+		t.pendingPrecompileName = ""
+	}
 
 	// Record error if call failed
 	if err != nil || reverted {
@@ -281,6 +306,8 @@ func (t *SimulationTracer) Reset() {
 	t.pendingCallCost = 0
 	t.pendingCallDepth = 0
 	t.pendingCallType = ""
+	t.pendingPrecompile = false
+	t.pendingPrecompileName = ""
 }
 
 // Note: opcodeStrings is defined in tracer.go and shared across the package.
