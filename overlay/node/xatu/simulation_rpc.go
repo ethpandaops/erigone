@@ -420,6 +420,7 @@ func (s *Service) executeSingleTransaction(
 
 	// Set tracer if provided
 	if tracer != nil {
+		tracer.precompiles = vm.Precompiles(chainRules)
 		statedb.SetHooks(tracer.Hooks())
 		vmConfig.Tracer = tracer.Hooks()
 	}

@@ -239,6 +239,33 @@ var gasDescriptions = map[string]string{
 
 	// Self-destruct
 	"SELFDESTRUCT": "Mark contract for destruction. Base cost; adds CALL_COLD if recipient is cold, CREATE_BY_SELFDESTRUCT if recipient doesn't exist.",
+
+	// Precompiles - Fixed gas
+	"PC_ECREC":                "ECRECOVER precompile. Signature recovery. Fixed cost.",
+	"PC_BN254_ADD":            "BN254 point addition (alt_bn128). Fixed cost.",
+	"PC_BN254_MUL":            "BN254 scalar multiplication. Fixed cost.",
+	"PC_BLS12_G1ADD":          "BLS12-381 G1 point addition. Fixed cost.",
+	"PC_BLS12_G2ADD":          "BLS12-381 G2 point addition. Fixed cost.",
+	"PC_BLS12_MAP_FP_TO_G1":   "BLS12-381 map field element to G1. Fixed cost.",
+	"PC_BLS12_MAP_FP2_TO_G2":  "BLS12-381 map field element to G2. Fixed cost.",
+	"PC_KZG_POINT_EVALUATION": "KZG point evaluation (blob proof verification). Fixed cost.",
+	"PC_P256VERIFY":           "P256 ECDSA signature verification. Fixed cost.",
+
+	// Precompiles - Variable gas parameters
+	"PC_SHA256_BASE":                  "SHA256 base cost. Total = base + per_word * ceil(len/32).",
+	"PC_SHA256_PER_WORD":              "SHA256 per-word (32 bytes) cost.",
+	"PC_RIPEMD160_BASE":               "RIPEMD160 base cost. Total = base + per_word * ceil(len/32).",
+	"PC_RIPEMD160_PER_WORD":           "RIPEMD160 per-word (32 bytes) cost.",
+	"PC_ID_BASE":                      "Identity (data copy) base cost. Total = base + per_word * ceil(len/32).",
+	"PC_ID_PER_WORD":                  "Identity per-word (32 bytes) cost.",
+	"PC_MODEXP_MIN_GAS":               "MODEXP minimum gas (floor). Complex formula result is clamped to at least this value.",
+	"PC_BN254_PAIRING_BASE":           "BN254 pairing check base cost. Total = base + per_pair * pairs.",
+	"PC_BN254_PAIRING_PER_PAIR":       "BN254 per-pair cost.",
+	"PC_BLAKE2F_PER_ROUND":            "BLAKE2F per-round cost. Total = per_round * rounds.",
+	"PC_BLS12_PAIRING_CHECK_BASE":     "BLS12-381 pairing check base cost. Total = base + per_pair * pairs.",
+	"PC_BLS12_PAIRING_CHECK_PER_PAIR": "BLS12-381 per-pair cost.",
+	"PC_BLS12_G1MSM_MUL_GAS":          "BLS12-381 G1 MSM per-point multiplier. Total = k * mul_gas * discount[k] / 1000.",
+	"PC_BLS12_G2MSM_MUL_GAS":          "BLS12-381 G2 MSM per-point multiplier. Total = k * mul_gas * discount[k] / 1000.",
 }
 
 // GasScheduleForRules returns default gas values for a fork.
@@ -298,6 +325,39 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	if rules.IsIstanbul {
 		schedule.Overrides[vm.GasKeySstoreSet] = params.SstoreSetGasEIP2200
 		schedule.Overrides[vm.GasKeySstoreReset] = params.SstoreResetGasEIP2200
+	}
+
+	// Precompile gas defaults (fork-aware)
+	precompiles := vm.Precompiles(rules)
+	for _, p := range precompiles {
+		switch p.Name() {
+		case "SHA256":
+			schedule.Overrides[vm.GasKeyPCSha256Base] = params.Sha256BaseGas
+			schedule.Overrides[vm.GasKeyPCSha256PerWord] = params.Sha256PerWordGas
+		case "RIPEMD160":
+			schedule.Overrides[vm.GasKeyPCRipemd160Base] = params.Ripemd160BaseGas
+			schedule.Overrides[vm.GasKeyPCRipemd160PerWord] = params.Ripemd160PerWordGas
+		case "ID":
+			schedule.Overrides[vm.GasKeyPCIdBase] = params.IdentityBaseGas
+			schedule.Overrides[vm.GasKeyPCIdPerWord] = params.IdentityPerWordGas
+		case "MODEXP":
+			schedule.Overrides[vm.GasKeyPCModexpMinGas] = 200
+		case "BN254_PAIRING":
+			schedule.Overrides[vm.GasKeyPCBn254PairingBase] = params.Bn254PairingBaseGasIstanbul
+			schedule.Overrides[vm.GasKeyPCBn254PairingPerPair] = params.Bn254PairingPerPointGasIstanbul
+		case "BLAKE2F":
+			schedule.Overrides[vm.GasKeyPCBlake2fPerRound] = 1
+		case "BLS12_PAIRING_CHECK":
+			schedule.Overrides[vm.GasKeyPCBls12PairingBase] = params.Bls12381PairingBaseGas
+			schedule.Overrides[vm.GasKeyPCBls12PairingPerPair] = params.Bls12381PairingPerPairGas
+		case "BLS12_G1MSM":
+			schedule.Overrides[vm.GasKeyPCBls12G1MsmMulGas] = params.Bls12381G1MulGas
+		case "BLS12_G2MSM":
+			schedule.Overrides[vm.GasKeyPCBls12G2MsmMulGas] = params.Bls12381G2MulGas
+		default:
+			// Fixed-gas precompiles: single key IS the total cost
+			schedule.Overrides["PC_"+p.Name()] = p.RequiredGas(nil)
+		}
 	}
 
 	return schedule
