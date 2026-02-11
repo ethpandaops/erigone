@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 06e5515..4532329 100644
+index 1de082d..e22653a 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -1152,6 +1152,12 @@ var (
@@ -15,7 +15,7 @@ index 06e5515..4532329 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -1942,6 +1948,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+@@ -1947,6 +1953,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
