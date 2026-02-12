@@ -50,6 +50,7 @@ const (
 	GasKeyPCBn254PairingBase    = "PC_BN254_PAIRING_BASE"
 	GasKeyPCBn254PairingPerPair = "PC_BN254_PAIRING_PER_PAIR"
 
+	GasKeyPCBlake2fBase     = "PC_BLAKE2F_BASE"
 	GasKeyPCBlake2fPerRound = "PC_BLAKE2F_PER_ROUND"
 
 	GasKeyPCBls12PairingBase    = "PC_BLS12_PAIRING_CHECK_BASE"
@@ -115,14 +116,15 @@ func precompileBasePerPair(schedule *GasSchedule, baseKey, perPairKey string, in
 	return base + perPair*pairs
 }
 
-// precompileBlake2f computes perRound * rounds, where rounds is read from input[0:4].
+// precompileBlake2f computes base + perRound * rounds, where rounds is read from input[0:4].
 func precompileBlake2f(schedule *GasSchedule, input []byte) uint64 {
 	if len(input) != 213 {
 		return 0
 	}
 	rounds := uint64(binary.BigEndian.Uint32(input[0:4]))
+	base := schedule.GetOr(GasKeyPCBlake2fBase, 0)
 	perRound := schedule.GetOr(GasKeyPCBlake2fPerRound, 1)
-	return perRound * rounds
+	return base + perRound*rounds
 }
 
 // precompileMsm computes k * mulGas * discount[k] / 1000.
