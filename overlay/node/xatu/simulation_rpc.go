@@ -34,9 +34,9 @@ import (
 
 // SimulateBlockGasRequest is the request for xatu_simulateBlockGas.
 type SimulateBlockGasRequest struct {
-	BlockNumber       uint64             `json:"blockNumber"`
-	GasSchedule       *CustomGasSchedule `json:"gasSchedule"`
-	SimulatedGasLimit uint64             `json:"simulatedGasLimit"`
+	BlockNumber uint64             `json:"blockNumber"`
+	GasSchedule *CustomGasSchedule `json:"gasSchedule"`
+	MaxGasLimit bool               `json:"maxGasLimit"`
 }
 
 // BlockGasSummary summarizes gas usage for a block.
@@ -76,10 +76,10 @@ type SimulateBlockGasResult struct {
 
 // SimulateTransactionGasRequest is the request for xatu_simulateTransactionGas.
 type SimulateTransactionGasRequest struct {
-	TransactionHash   string             `json:"transactionHash"`
-	BlockNumber       uint64             `json:"blockNumber"`
-	GasSchedule       *CustomGasSchedule `json:"gasSchedule"`
-	SimulatedGasLimit uint64             `json:"simulatedGasLimit"`
+	TransactionHash string             `json:"transactionHash"`
+	BlockNumber     uint64             `json:"blockNumber"`
+	GasSchedule     *CustomGasSchedule `json:"gasSchedule"`
+	MaxGasLimit     bool               `json:"maxGasLimit"`
 }
 
 // TxGasDetail provides detailed gas breakdown for a transaction.
@@ -154,7 +154,7 @@ func (s *Service) SimulateBlockGas(
 	for txIndex, txn := range block.Transactions() {
 		// Run both executions in parallel
 		dualResult, err := s.executeTransactionDual(
-			ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.SimulatedGasLimit,
+			ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.MaxGasLimit,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute tx %d: %w", txIndex, err)
@@ -287,7 +287,7 @@ func (s *Service) SimulateTransactionGas(
 
 	// Run both executions in parallel
 	dualResult, err := s.executeTransactionDual(
-		ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.SimulatedGasLimit,
+		ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.MaxGasLimit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute transaction: %w", err)
@@ -346,7 +346,7 @@ func (s *Service) executeTransactionDual(
 	txIndex int,
 	txNumReader rawdbv3.TxNumsReader,
 	gasSchedule *CustomGasSchedule,
-	simulatedGasLimit uint64,
+	maxGasLimit bool,
 ) (*dualExecutionResult, error) {
 	// Execute with standard JumpTable (original gas costs)
 	dbTx1, err := s.db.BeginTemporalRo(ctx)
@@ -356,7 +356,7 @@ func (s *Service) executeTransactionDual(
 	defer dbTx1.Rollback()
 
 	originalTracer := NewSimulationTracer(nil)
-	originalResult, err := s.executeSingleTransaction(ctx, dbTx1, header, block, txIndex, txNumReader, nil, originalTracer, 0)
+	originalResult, err := s.executeSingleTransaction(ctx, dbTx1, header, block, txIndex, txNumReader, nil, originalTracer, false)
 	if err != nil {
 		return nil, fmt.Errorf("original execution failed: %w", err)
 	}
@@ -374,7 +374,7 @@ func (s *Service) executeTransactionDual(
 	defer dbTx2.Rollback()
 
 	simulatedTracer := NewSimulationTracer(gasSchedule)
-	simulatedResult, err := s.executeSingleTransaction(ctx, dbTx2, header, block, txIndex, txNumReader, gasSchedule, simulatedTracer, simulatedGasLimit)
+	simulatedResult, err := s.executeSingleTransaction(ctx, dbTx2, header, block, txIndex, txNumReader, gasSchedule, simulatedTracer, maxGasLimit)
 	if err != nil {
 		return nil, fmt.Errorf("simulated execution failed: %w", err)
 	}
@@ -435,7 +435,7 @@ func (s *Service) executeSingleTransaction(
 	txNumReader rawdbv3.TxNumsReader,
 	gasSchedule *CustomGasSchedule,
 	tracer *SimulationTracer,
-	gasLimitOverride uint64,
+	maxGasLimit bool,
 ) (*executionResult, error) {
 	// Compute block context (creates fresh in-memory state)
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
@@ -477,22 +477,21 @@ func (s *Service) executeSingleTransaction(
 		evm.GasSchedule = gasSchedule.ToVMGasSchedule()
 	}
 
-	// Override gas limit for simulated execution if requested.
-	// This allows the simulation to run without artificial out-of-gas failures
-	// caused by the original transaction's gas limit being too low for the new pricing.
-	if gasLimitOverride > 0 {
+	// When maxGasLimit is enabled, override the transaction's gas limit with the block's
+	// gas limit. This removes the gas limit as a constraining factor so the simulation
+	// shows the true gas cost under the new pricing, without artificial OOG failures.
+	if maxGasLimit {
 		if typedMsg, ok := msg.(*erigontypes.Message); ok {
-			typedMsg.ChangeGas(0, gasLimitOverride)
-			// Disable gas validation (EIP-7825 cap check) since this is a simulation
-			// with an overridden gas limit, not a real transaction submission.
+			typedMsg.ChangeGas(0, header.GasLimit)
+			// Disable gas validation (EIP-7825 cap check) since this is a simulation.
 			typedMsg.SetCheckGas(false)
 		}
 	}
 
-	// Execute. When the gas limit is overridden, enable gasBailout to skip the sender
-	// balance check — the sender's balance was sufficient for the original gas limit,
-	// not the overridden one, and we don't want balance validation to block the simulation.
-	gasBailout := gasLimitOverride > 0
+	// When maxGasLimit is enabled, also enable gasBailout to skip the sender balance
+	// check — the sender's balance was sufficient for the original gas limit, not the
+	// overridden one.
+	gasBailout := maxGasLimit
 	gp := new(protocol.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
 	execResult, err := protocol.ApplyMessage(evm, msg, gp, true, gasBailout, s.engine)
 
