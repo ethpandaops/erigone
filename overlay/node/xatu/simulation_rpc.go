@@ -198,6 +198,14 @@ func (s *Service) SimulateBlockGas(
 			existing.SimulatedGas += summary.SimulatedGas
 			result.OpcodeBreakdown[opcode] = existing
 		}
+
+		// Add intrinsic gas to opcode breakdown so it's visible in the Gas Breakdown tab
+		intrinsic := result.OpcodeBreakdown["TX_INTRINSIC"]
+		intrinsic.OriginalCount++
+		intrinsic.OriginalGas += dualResult.Original.IntrinsicGas
+		intrinsic.SimulatedCount++
+		intrinsic.SimulatedGas += dualResult.Simulated.IntrinsicGas
+		result.OpcodeBreakdown["TX_INTRINSIC"] = intrinsic
 	}
 
 	// Check if gas would exceed limit
@@ -469,6 +477,16 @@ func (s *Service) executeSingleTransaction(
 		false, // isAATxn
 		0,     // authorizationsLen
 	)
+	if gasSchedule != nil {
+		vmSchedule := gasSchedule.ToVMGasSchedule()
+		if vmSchedule != nil && vmSchedule.HasIntrinsicOverrides() {
+			intrinsicGas, _ = vm.CalcCustomIntrinsicGas(
+				vmSchedule, txn.GetData(), accessListLen, storageKeysLen,
+				txn.GetTo() == nil, chainRules.IsHomestead, chainRules.IsIstanbul,
+				chainRules.IsShanghai, chainRules.IsPrague, false, 0,
+			)
+		}
+	}
 
 	result := &executionResult{
 		Status:       status,

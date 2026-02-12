@@ -240,6 +240,18 @@ var gasDescriptions = map[string]string{
 	// Self-destruct
 	"SELFDESTRUCT": "Mark contract for destruction. Base cost; adds CALL_COLD if recipient is cold, CREATE_BY_SELFDESTRUCT if recipient doesn't exist.",
 
+	// Intrinsic Gas (charged before EVM execution)
+	"TX_BASE":             "Base transaction cost (21,000 for regular transactions). Charged before EVM execution.",
+	"TX_CREATE_BASE":      "Base cost for contract creation transactions (53,000). Replaces TX_BASE for CREATE transactions.",
+	"TX_DATA_ZERO":        "Per zero byte of calldata (4 gas). Part of intrinsic gas, charged before EVM execution.",
+	"TX_DATA_NONZERO":     "Per non-zero byte of calldata (16 gas post-Istanbul). Part of intrinsic gas.",
+	"TX_ACCESS_LIST_ADDR": "Per address in EIP-2930 access list (2,400 gas). Berlin+.",
+	"TX_ACCESS_LIST_KEY":  "Per storage key in EIP-2930 access list (1,900 gas). Berlin+.",
+	"TX_INIT_CODE_WORD":   "Per 32-byte word of init code in CREATE transactions (2 gas). Shanghai+ (EIP-3860).",
+	"TX_FLOOR_PER_TOKEN":  "EIP-7623 calldata floor cost per token (10 gas). Prague+. Floor = TX_BASE + tokens * TX_FLOOR_PER_TOKEN.",
+	"TX_AUTH_COST":        "Per authorization in EIP-7702 SetCode transactions (25,000 gas). Prague+.",
+	"TX_INTRINSIC":        "Total intrinsic gas charged before EVM execution. Sum of TX_BASE + calldata costs + access list costs.",
+
 	// Precompiles - Fixed gas
 	"PC_ECREC":                "ECRECOVER precompile. Signature recovery. Fixed cost.",
 	"PC_BN254_ADD":            "BN254 point addition (alt_bn128). Fixed cost.",
@@ -325,6 +337,27 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 	if rules.IsIstanbul {
 		schedule.Overrides[vm.GasKeySstoreSet] = params.SstoreSetGasEIP2200
 		schedule.Overrides[vm.GasKeySstoreReset] = params.SstoreResetGasEIP2200
+	}
+
+	// Intrinsic gas defaults
+	schedule.Overrides[vm.GasKeyTxBase] = params.TxGas
+	schedule.Overrides[vm.GasKeyTxCreateBase] = params.TxGasContractCreation
+	schedule.Overrides[vm.GasKeyTxDataZero] = params.TxDataZeroGas
+	if rules.IsIstanbul {
+		schedule.Overrides[vm.GasKeyTxDataNonZero] = params.TxDataNonZeroGasEIP2028
+	} else {
+		schedule.Overrides[vm.GasKeyTxDataNonZero] = params.TxDataNonZeroGasFrontier
+	}
+	if rules.IsBerlin {
+		schedule.Overrides[vm.GasKeyTxAccessListAddr] = params.TxAccessListAddressGas
+		schedule.Overrides[vm.GasKeyTxAccessListKey] = params.TxAccessListStorageKeyGas
+	}
+	if rules.IsShanghai {
+		schedule.Overrides[vm.GasKeyTxInitCodeWord] = params.InitCodeWordGas
+	}
+	if rules.IsPrague {
+		schedule.Overrides[vm.GasKeyTxFloorPerToken] = params.TxTotalCostFloorPerToken
+		schedule.Overrides[vm.GasKeyTxAuthCost] = params.PerEmptyAccountCost
 	}
 
 	// Precompile gas defaults (fork-aware)
