@@ -42,6 +42,21 @@ index dc353bf..52a46f1 100644
 +	}
 +	return x - y
 +}
+diff --git a/execution/protocol/state_transition.go b/execution/protocol/state_transition.go
+index 8ed4dd7..7f871a3 100644
+--- a/execution/protocol/state_transition.go
++++ b/execution/protocol/state_transition.go
+@@ -493,6 +493,10 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (result *
+ 
+ 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
+ 	gas, floorGas7623, overflow := fixedgas.IntrinsicGas(st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
++	if st.evm.GasSchedule != nil && st.evm.GasSchedule.HasIntrinsicOverrides() {
++		gas, floorGas7623 = vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
++		overflow = false
++	}
+ 	if overflow {
+ 		return nil, ErrGasUintOverflow
+ 	}
 diff --git a/execution/vm/contracts.go b/execution/vm/contracts.go
 index b0d2aa8..85e1804 100644
 --- a/execution/vm/contracts.go
