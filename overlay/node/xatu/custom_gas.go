@@ -273,7 +273,8 @@ var gasDescriptions = map[string]string{
 	"PC_MODEXP_MIN_GAS":               "MODEXP minimum gas (floor). Complex formula result is clamped to at least this value.",
 	"PC_BN254_PAIRING_BASE":           "BN254 pairing check base cost. Total = base + per_pair * pairs.",
 	"PC_BN254_PAIRING_PER_PAIR":       "BN254 per-pair cost.",
-	"PC_BLAKE2F_PER_ROUND":            "BLAKE2F per-round cost. Total = per_round * rounds.",
+	"PC_BLAKE2F_BASE":                 "BLAKE2F base cost. Total = base + per_round * rounds.",
+	"PC_BLAKE2F_PER_ROUND":            "BLAKE2F per-round cost. Total = base + per_round * rounds.",
 	"PC_BLS12_PAIRING_CHECK_BASE":     "BLS12-381 pairing check base cost. Total = base + per_pair * pairs.",
 	"PC_BLS12_PAIRING_CHECK_PER_PAIR": "BLS12-381 per-pair cost.",
 	"PC_BLS12_G1MSM_MUL_GAS":          "BLS12-381 G1 MSM per-point multiplier. Total = k * mul_gas * discount[k] / 1000.",
@@ -379,6 +380,7 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 			schedule.Overrides[vm.GasKeyPCBn254PairingBase] = params.Bn254PairingBaseGasIstanbul
 			schedule.Overrides[vm.GasKeyPCBn254PairingPerPair] = params.Bn254PairingPerPointGasIstanbul
 		case "BLAKE2F":
+			schedule.Overrides[vm.GasKeyPCBlake2fBase] = 0
 			schedule.Overrides[vm.GasKeyPCBlake2fPerRound] = 1
 		case "BLS12_PAIRING_CHECK":
 			schedule.Overrides[vm.GasKeyPCBls12PairingBase] = params.Bls12381PairingBaseGas
