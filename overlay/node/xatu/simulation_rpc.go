@@ -36,6 +36,7 @@ import (
 type SimulateBlockGasRequest struct {
 	BlockNumber uint64             `json:"blockNumber"`
 	GasSchedule *CustomGasSchedule `json:"gasSchedule"`
+	MaxGasLimit bool               `json:"maxGasLimit"`
 }
 
 // BlockGasSummary summarizes gas usage for a block.
@@ -78,6 +79,7 @@ type SimulateTransactionGasRequest struct {
 	TransactionHash string             `json:"transactionHash"`
 	BlockNumber     uint64             `json:"blockNumber"`
 	GasSchedule     *CustomGasSchedule `json:"gasSchedule"`
+	MaxGasLimit     bool               `json:"maxGasLimit"`
 }
 
 // TxGasDetail provides detailed gas breakdown for a transaction.
@@ -152,7 +154,7 @@ func (s *Service) SimulateBlockGas(
 	for txIndex, txn := range block.Transactions() {
 		// Run both executions in parallel
 		dualResult, err := s.executeTransactionDual(
-			ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule,
+			ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.MaxGasLimit,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute tx %d: %w", txIndex, err)
@@ -285,7 +287,7 @@ func (s *Service) SimulateTransactionGas(
 
 	// Run both executions in parallel
 	dualResult, err := s.executeTransactionDual(
-		ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule,
+		ctx, tx, header, block, txIndex, txNumReader, req.GasSchedule, req.MaxGasLimit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute transaction: %w", err)
@@ -344,6 +346,7 @@ func (s *Service) executeTransactionDual(
 	txIndex int,
 	txNumReader rawdbv3.TxNumsReader,
 	gasSchedule *CustomGasSchedule,
+	maxGasLimit bool,
 ) (*dualExecutionResult, error) {
 	// Execute with standard JumpTable (original gas costs)
 	dbTx1, err := s.db.BeginTemporalRo(ctx)
@@ -353,7 +356,7 @@ func (s *Service) executeTransactionDual(
 	defer dbTx1.Rollback()
 
 	originalTracer := NewSimulationTracer(nil)
-	originalResult, err := s.executeSingleTransaction(ctx, dbTx1, header, block, txIndex, txNumReader, nil, originalTracer)
+	originalResult, err := s.executeSingleTransaction(ctx, dbTx1, header, block, txIndex, txNumReader, nil, originalTracer, false)
 	if err != nil {
 		return nil, fmt.Errorf("original execution failed: %w", err)
 	}
@@ -371,7 +374,7 @@ func (s *Service) executeTransactionDual(
 	defer dbTx2.Rollback()
 
 	simulatedTracer := NewSimulationTracer(gasSchedule)
-	simulatedResult, err := s.executeSingleTransaction(ctx, dbTx2, header, block, txIndex, txNumReader, gasSchedule, simulatedTracer)
+	simulatedResult, err := s.executeSingleTransaction(ctx, dbTx2, header, block, txIndex, txNumReader, gasSchedule, simulatedTracer, maxGasLimit)
 	if err != nil {
 		return nil, fmt.Errorf("simulated execution failed: %w", err)
 	}
@@ -432,6 +435,7 @@ func (s *Service) executeSingleTransaction(
 	txNumReader rawdbv3.TxNumsReader,
 	gasSchedule *CustomGasSchedule,
 	tracer *SimulationTracer,
+	maxGasLimit bool,
 ) (*executionResult, error) {
 	// Compute block context (creates fresh in-memory state)
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
@@ -473,9 +477,23 @@ func (s *Service) executeSingleTransaction(
 		evm.GasSchedule = gasSchedule.ToVMGasSchedule()
 	}
 
-	// Execute
+	// When maxGasLimit is enabled, override the transaction's gas limit with the block's
+	// gas limit. This removes the gas limit as a constraining factor so the simulation
+	// shows the true gas cost under the new pricing, without artificial OOG failures.
+	if maxGasLimit {
+		if typedMsg, ok := msg.(*erigontypes.Message); ok {
+			typedMsg.ChangeGas(0, header.GasLimit)
+			// Disable gas validation (EIP-7825 cap check) since this is a simulation.
+			typedMsg.SetCheckGas(false)
+		}
+	}
+
+	// When maxGasLimit is enabled, also enable gasBailout to skip the sender balance
+	// check — the sender's balance was sufficient for the original gas limit, not the
+	// overridden one.
+	gasBailout := maxGasLimit
 	gp := new(protocol.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
-	execResult, err := protocol.ApplyMessage(evm, msg, gp, true, false, s.engine)
+	execResult, err := protocol.ApplyMessage(evm, msg, gp, true, gasBailout, s.engine)
 
 	// Determine status
 	status := "success"
