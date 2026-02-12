@@ -59,6 +59,9 @@ type TxSummary struct {
 	SimulatedReverts uint64      `json:"simulatedReverts"`
 	OriginalErrors   []CallError `json:"originalErrors"`
 	SimulatedErrors  []CallError `json:"simulatedErrors"`
+	// Error is set when execution fails before the EVM runs (e.g. intrinsic gas too low).
+	// It captures the pre-execution error that ApplyMessage returns.
+	Error string `json:"error,omitempty"`
 }
 
 // SimulateBlockGasResult is the result of xatu_simulateBlockGas.
@@ -98,7 +101,8 @@ type SimulateTransactionGasResult struct {
 type executionResult struct {
 	GasUsed      uint64
 	IntrinsicGas uint64
-	Err          error
+	Err          error // EVM execution error (from ExecResult.Err)
+	ApplyErr     error // Pre-execution error (from ApplyMessage return, e.g. intrinsic gas too low)
 	Status       string
 	RevertCount  uint64      // Number of REVERT opcodes executed (includes nested calls)
 	OpcodeCount  uint64      // Total number of opcodes executed
@@ -165,8 +169,17 @@ func (s *Service) SimulateBlockGas(
 		}
 
 		// Determine if execution paths diverged
-		// Divergence occurs when opcode counts differ between original and simulated
-		diverged := dualResult.Original.OpcodeCount != dualResult.Simulated.OpcodeCount
+		// Divergence occurs when opcode counts differ OR status changed between original and simulated
+		diverged := dualResult.Original.OpcodeCount != dualResult.Simulated.OpcodeCount ||
+			dualResult.Original.Status != dualResult.Simulated.Status
+
+		// Surface pre-execution errors (e.g. "intrinsic gas too low") from either execution
+		var txError string
+		if dualResult.Original.ApplyErr != nil {
+			txError = "original: " + dualResult.Original.ApplyErr.Error()
+		} else if dualResult.Simulated.ApplyErr != nil {
+			txError = dualResult.Simulated.ApplyErr.Error()
+		}
 
 		// Add transaction summary
 		txSummary := TxSummary{
@@ -182,6 +195,7 @@ func (s *Service) SimulateBlockGas(
 			SimulatedReverts: dualResult.Simulated.RevertCount,
 			OriginalErrors:   dualResult.Original.CallErrors,
 			SimulatedErrors:  dualResult.Simulated.CallErrors,
+			Error:            txError,
 		}
 		result.Transactions = append(result.Transactions, txSummary)
 
@@ -280,6 +294,18 @@ func (s *Service) SimulateTransactionGas(
 	// Build result
 	// Note: GasUsed from ApplyMessage already includes intrinsic gas
 	// Intrinsic gas is calculated by Erigon and returned in the execution result
+	// Safely calculate execution gas (avoid uint64 underflow when GasUsed < IntrinsicGas,
+	// which happens when a tx fails pre-execution e.g. intrinsic gas too low)
+	originalExecGas := uint64(0)
+	if dualResult.Original.GasUsed > dualResult.Original.IntrinsicGas {
+		originalExecGas = dualResult.Original.GasUsed - dualResult.Original.IntrinsicGas
+	}
+
+	simulatedExecGas := uint64(0)
+	if dualResult.Simulated.GasUsed > dualResult.Simulated.IntrinsicGas {
+		simulatedExecGas = dualResult.Simulated.GasUsed - dualResult.Simulated.IntrinsicGas
+	}
+
 	result := &SimulateTransactionGasResult{
 		TransactionHash: req.TransactionHash,
 		BlockNumber:     blockNum,
@@ -287,12 +313,12 @@ func (s *Service) SimulateTransactionGas(
 		Original: TxGasDetail{
 			GasUsed:      dualResult.Original.GasUsed,
 			IntrinsicGas: dualResult.Original.IntrinsicGas,
-			ExecutionGas: dualResult.Original.GasUsed - dualResult.Original.IntrinsicGas,
+			ExecutionGas: originalExecGas,
 		},
 		Simulated: TxGasDetail{
 			GasUsed:      dualResult.Simulated.GasUsed,
 			IntrinsicGas: dualResult.Simulated.IntrinsicGas,
-			ExecutionGas: dualResult.Simulated.GasUsed - dualResult.Simulated.IntrinsicGas,
+			ExecutionGas: simulatedExecGas,
 		},
 		OpcodeBreakdown: dualResult.OpcodeBreakdown,
 	}
@@ -491,6 +517,7 @@ func (s *Service) executeSingleTransaction(
 	result := &executionResult{
 		Status:       status,
 		IntrinsicGas: intrinsicGas,
+		ApplyErr:     err, // Captures pre-execution errors (e.g. intrinsic gas too low)
 	}
 
 	if execResult != nil {
