@@ -57,7 +57,7 @@ jobs:
       - name: Build patched upstream
         run: |
           # Clone upstream, apply patches, copy overlay
-          ./scripts/erigone-build.sh -r erigontech/erigon -b main -c 21f832cea539a780f5750f5712025d8a8e7dc34c --ci --skip-build
+          ./scripts/erigone-build.sh -r erigontech/erigon -b main --ci --skip-build
 
       - name: Build and push erigone image (multi-arch)
         uses: docker/build-push-action@v5

@@ -42,6 +42,19 @@ index dc353bf..52a46f1 100644
 +	}
 +	return x - y
 +}
+diff --git a/db/downloader/downloader.go b/db/downloader/downloader.go
+index 01b55af..0d80af6 100644
+--- a/db/downloader/downloader.go
++++ b/db/downloader/downloader.go
+@@ -1074,7 +1074,7 @@ func (d *Downloader) fetchMetainfoFromWebseeds(ctx context.Context, name string,
+ 		buf.Reset()
+ 		var mi metainfo.MetaInfo
+ 		var w io.Writer = &buf
+-		mi, err = GetMetainfoFromWebseed(ctx, base, base, d.metainfoHttpClient, w)
++		mi, err = GetMetainfoFromWebseed(ctx, base, name, d.metainfoHttpClient, w)
+ 		if err != nil {
+ 			d.log(log.LvlDebug, "error fetching metainfo from webseed", "err", err, "name", name, "webseed", base)
+ 			// Whither error?
 diff --git a/execution/protocol/state_transition.go b/execution/protocol/state_transition.go
 index 8ed4dd7..7f871a3 100644
 --- a/execution/protocol/state_transition.go
