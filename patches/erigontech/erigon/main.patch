@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 1de082d..e22653a 100644
+index f0b7dcd..f2d2bf7 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -1152,6 +1152,12 @@ var (
@@ -43,7 +43,7 @@ index dc353bf..52a46f1 100644
 +	return x - y
 +}
 diff --git a/db/downloader/downloader.go b/db/downloader/downloader.go
-index 01b55af..0d80af6 100644
+index 3cdd24f..96461cf 100644
 --- a/db/downloader/downloader.go
 +++ b/db/downloader/downloader.go
 @@ -1074,7 +1074,7 @@ func (d *Downloader) fetchMetainfoFromWebseeds(ctx context.Context, name string,
