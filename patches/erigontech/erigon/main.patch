@@ -585,7 +585,7 @@ index 8f62c8d..6b0575a 100644
  	switch {
  	case chainRules.IsAmsterdam:
 diff --git a/execution/vm/jump_table.go b/execution/vm/jump_table.go
-index e035ed2..2bc3c31 100644
+index 3022c71..7c47906 100644
 --- a/execution/vm/jump_table.go
 +++ b/execution/vm/jump_table.go
 @@ -53,6 +53,17 @@ type operation struct {
