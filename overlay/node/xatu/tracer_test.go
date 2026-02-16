@@ -481,6 +481,146 @@ func TestGasUsedOOGAtDepth(t *testing.T) {
 	}
 }
 
+// TestMemorySizeCapture verifies that MemorySize is captured for all opcodes.
+func TestMemorySizeCapture(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+
+	// Create a mock context with 64 bytes of memory
+	ctx := newMockOpContext(10)
+	ctx.memory = make([]byte, 64)
+
+	tracer.OnOpcode(0, byte(vm.ADD), 10000, 3, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+
+	if logs[0].MemorySize != 64 {
+		t.Errorf("MemorySize = %d, want 64", logs[0].MemorySize)
+	}
+}
+
+// TestMemorySizeCapture_ZeroMemory verifies that MemorySize is 0 when no memory allocated.
+func TestMemorySizeCapture_ZeroMemory(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+	ctx := newMockOpContext(10)
+
+	tracer.OnOpcode(0, byte(vm.PUSH1), 10000, 3, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if logs[0].MemorySize != 0 {
+		t.Errorf("MemorySize = %d, want 0", logs[0].MemorySize)
+	}
+}
+
+// TestCallTransfersValueCapture verifies that CallTransfersValue is captured
+// for CALL/CALLCODE with non-zero value.
+func TestCallTransfersValueCapture(t *testing.T) {
+	tests := []struct {
+		name           string
+		opcode         vm.OpCode
+		stackSize      int
+		valueNonZero   bool
+		expectTransfer bool
+	}{
+		{
+			name:           "CALL with non-zero value",
+			opcode:         vm.CALL,
+			stackSize:      7,
+			valueNonZero:   true,
+			expectTransfer: true,
+		},
+		{
+			name:           "CALL with zero value",
+			opcode:         vm.CALL,
+			stackSize:      7,
+			valueNonZero:   false,
+			expectTransfer: false,
+		},
+		{
+			name:           "CALLCODE with non-zero value",
+			opcode:         vm.CALLCODE,
+			stackSize:      7,
+			valueNonZero:   true,
+			expectTransfer: true,
+		},
+		{
+			name:           "STATICCALL - no value field",
+			opcode:         vm.STATICCALL,
+			stackSize:      6,
+			valueNonZero:   false,
+			expectTransfer: false,
+		},
+		{
+			name:           "DELEGATECALL - no value field",
+			opcode:         vm.DELEGATECALL,
+			stackSize:      6,
+			valueNonZero:   false,
+			expectTransfer: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer := NewStructLogTracer(StructLogConfig{})
+			ctx := newMockOpContext(tc.stackSize)
+
+			// Set value at stack position len-3 (3rd from top)
+			if tc.valueNonZero && len(ctx.stack) > 2 {
+				ctx.stack[len(ctx.stack)-3].SetUint64(1000) // Non-zero value
+			} else if len(ctx.stack) > 2 {
+				ctx.stack[len(ctx.stack)-3].Clear() // Zero value
+			}
+
+			tracer.OnOpcode(0, byte(tc.opcode), 100000, 2600, ctx, nil, 1, nil)
+
+			logs := tracer.StructLogs()
+			if len(logs) != 1 {
+				t.Fatalf("expected 1 log, got %d", len(logs))
+			}
+
+			if logs[0].CallTransfersValue != tc.expectTransfer {
+				t.Errorf("CallTransfersValue = %v, want %v", logs[0].CallTransfersValue, tc.expectTransfer)
+			}
+		})
+	}
+}
+
+// TestExtCodeCopySizeCapture verifies that ExtCodeCopySize is captured for EXTCODECOPY.
+func TestExtCodeCopySizeCapture(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+
+	// EXTCODECOPY stack: addr, destOffset, offset, size (size is 4th from top)
+	ctx := newMockOpContext(4)
+	ctx.stack[0].SetUint64(256) // size at position len-4
+
+	tracer.OnOpcode(0, byte(vm.EXTCODECOPY), 100000, 2600, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+
+	if logs[0].ExtCodeCopySize != 256 {
+		t.Errorf("ExtCodeCopySize = %d, want 256", logs[0].ExtCodeCopySize)
+	}
+}
+
+// TestExtCodeCopySizeCapture_NonExtCodeCopy verifies that ExtCodeCopySize is 0
+// for non-EXTCODECOPY opcodes.
+func TestExtCodeCopySizeCapture_NonExtCodeCopy(t *testing.T) {
+	tracer := NewStructLogTracer(StructLogConfig{})
+	ctx := newMockOpContext(10)
+
+	tracer.OnOpcode(0, byte(vm.SLOAD), 100000, 2100, ctx, nil, 1, nil)
+
+	logs := tracer.StructLogs()
+	if logs[0].ExtCodeCopySize != 0 {
+		t.Errorf("ExtCodeCopySize = %d, want 0", logs[0].ExtCodeCopySize)
+	}
+}
+
 // =============================================================================
 // StructLogTracer Benchmarks
 // =============================================================================

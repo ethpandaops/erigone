@@ -198,6 +198,10 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 		Depth:   uint64(depth),
 	}
 
+	// Capture memory size for all opcodes (zero-alloc: returns slice header).
+	// Used downstream to compute memory expansion gas between consecutive opcodes.
+	log.MemorySize = uint32(len(scope.MemoryData())) //nolint:gosec // memory size fits uint32
+
 	// Sanitize gas values: they can never legitimately exceed available gas.
 	// This handles two cases:
 	// 1. Erigon's unsigned integer underflow bug in gas.go:callGas() where
@@ -231,6 +235,26 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 			addrBytes := addr.Bytes20()
 			addrStr := "0x" + hex.EncodeToString(addrBytes[:])
 			log.CallToAddress = &addrStr
+		}
+
+		// Capture whether CALL/CALLCODE transfers non-zero ETH value.
+		// Value is at stack position len-3 for CALL and CALLCODE only.
+		// Used downstream to normalize CALL gas for cold access detection.
+		if (op == vm.CALL || op == vm.CALLCODE) && len(stack) > 2 {
+			val := &stack[len(stack)-3]
+			if !val.IsZero() {
+				log.CallTransfersValue = true
+			}
+		}
+	}
+
+	// Capture size parameter for EXTCODECOPY (4th from top of stack).
+	// Used downstream to compute copy cost for cold access detection.
+	if op == vm.EXTCODECOPY {
+		stack := scope.StackData()
+		if len(stack) > 3 {
+			size := &stack[len(stack)-4]
+			log.ExtCodeCopySize = uint32(size.Uint64()) //nolint:gosec // size fits uint32
 		}
 	}
 
