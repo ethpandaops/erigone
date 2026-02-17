@@ -119,6 +119,10 @@ func loadConfig(file string) (*config.Config, error) {
 		return nil, err
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	return cfg, nil
 }
 
