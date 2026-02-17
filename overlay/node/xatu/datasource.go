@@ -27,6 +27,7 @@ import (
 
 	"github.com/erigontech/erigon/common"
 	"github.com/erigontech/erigon/db/rawdb"
+	"github.com/erigontech/erigon/execution/chain"
 	"github.com/erigontech/erigon/execution/protocol"
 	"github.com/erigontech/erigon/execution/stagedsync/stages"
 	erigonstate "github.com/erigontech/erigon/execution/state"
@@ -38,6 +39,54 @@ import (
 
 // Compile-time check that Service implements DataSource interface.
 var _ execution.DataSource = (*Service)(nil)
+
+// chainConfigForExecution returns the chain config to use for EVM execution.
+// It reads the config from the database (like the RPC handler does) to ensure
+// fork schedules match what other Erigon subsystems see. The in-memory config
+// passed at init may be stale if the DB was updated after node startup.
+// Falls back to the in-memory config if the DB read fails.
+func (s *Service) chainConfigForExecution(ctx context.Context) *chain.Config {
+	s.dbChainConfigOnce.Do(func() {
+		tx, err := s.db.BeginTemporalRo(ctx)
+		if err != nil {
+			s.dbChainConfigErr = err
+			return
+		}
+		defer tx.Rollback()
+
+		genesisHash, ok, err := s.blockReader.CanonicalHash(ctx, tx, 0)
+		if err != nil || !ok {
+			s.dbChainConfigErr = fmt.Errorf("failed to read genesis hash: %w (ok=%v)", err, ok)
+			return
+		}
+
+		cc, err := rawdb.ReadChainConfig(tx, genesisHash)
+		if err != nil || cc == nil {
+			s.dbChainConfigErr = fmt.Errorf("failed to read chain config from DB: %w", err)
+			return
+		}
+
+		s.dbChainConfig = cc
+
+		s.log.Info("Loaded chain config from DB for execution",
+			"osakaTime", cc.OsakaTime,
+			"pragueTime", cc.PragueTime,
+			"inMemoryOsakaTime", s.chainConfig.OsakaTime,
+		)
+	})
+
+	if s.dbChainConfig != nil {
+		return s.dbChainConfig
+	}
+
+	if s.dbChainConfigErr != nil {
+		s.log.Warn("Failed to load chain config from DB, using in-memory config",
+			"err", s.dbChainConfigErr,
+		)
+	}
+
+	return s.chainConfig
+}
 
 // BlockNumber returns the current block number.
 func (s *Service) BlockNumber(ctx context.Context) (*uint64, error) {
@@ -256,16 +305,20 @@ func (s *Service) DebugTraceTransaction(
 
 	header := block.Header()
 
+	// Use chain config from DB to match what the RPC handler sees. The in-memory
+	// config from init may be stale if fork schedules were updated in the DB.
+	execChainConfig := s.chainConfigForExecution(ctx)
+
 	// Compute block context
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, s.chainConfig, s.blockReader, nil, txNumReader, tx, txIndex,
+		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, tx, txIndex,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)
 	}
 
 	// Compute tx context
-	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, s.chainConfig, txIndex)
+	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, execChainConfig, txIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}
@@ -282,7 +335,7 @@ func (s *Service) DebugTraceTransaction(
 	txn := block.Transactions()[txIndex]
 
 	// Execute transaction with tracing
-	result, err := s.executeWithTracer(statedb, blockCtx, txCtx, msg, tracer, txn)
+	result, err := s.executeWithTracer(statedb, blockCtx, txCtx, msg, tracer, txn, execChainConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute transaction: %w", err)
 	}
@@ -337,12 +390,13 @@ func (s *Service) executeWithTracer(
 	msg protocol.Message,
 	tracer *StructLogTracer,
 	txn erigontypes.Transaction,
+	chainCfg *chain.Config,
 ) (*evmtypes.ExecutionResult, error) {
 	// Set tracer hooks on state
 	statedb.SetHooks(tracer.Hooks())
 
 	// Create EVM with tracer
-	evm := vm.NewEVM(blockCtx, txCtx, statedb, s.chainConfig, vm.Config{
+	evm := vm.NewEVM(blockCtx, txCtx, statedb, chainCfg, vm.Config{
 		Tracer:    tracer.Hooks(),
 		NoBaseFee: true,
 	})

@@ -61,6 +61,13 @@ type Service struct {
 	chainConfig *chain.Config
 	engine      rules.EngineReader
 
+	// dbChainConfig is the chain config read from the database, which may differ
+	// from the in-memory chainConfig if the DB was updated after node init (e.g.,
+	// fork schedule changes). Lazily loaded on first use via dbChainConfigOnce.
+	dbChainConfig     *chain.Config
+	dbChainConfigOnce sync.Once
+	dbChainConfigErr  error
+
 	// execution-processor components
 	embeddedNode *execution.EmbeddedNode
 	pool         *ethereum.Pool
