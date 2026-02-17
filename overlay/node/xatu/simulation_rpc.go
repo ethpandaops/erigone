@@ -437,16 +437,19 @@ func (s *Service) executeSingleTransaction(
 	tracer *SimulationTracer,
 	maxGasLimit bool,
 ) (*executionResult, error) {
+	// Use chain config from DB to match what the RPC handler sees.
+	execChainConfig := s.chainConfigForExecution(ctx)
+
 	// Compute block context (creates fresh in-memory state)
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, s.chainConfig, s.blockReader, nil, txNumReader, dbTx, txIndex,
+		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, dbTx, txIndex,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)
 	}
 
 	// Compute tx context
-	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, s.chainConfig, txIndex)
+	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, execChainConfig, txIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}
@@ -470,7 +473,7 @@ func (s *Service) executeSingleTransaction(
 	}
 
 	// Create EVM
-	evm := vm.NewEVM(blockCtx, txCtx, statedb, s.chainConfig, vmConfig)
+	evm := vm.NewEVM(blockCtx, txCtx, statedb, execChainConfig, vmConfig)
 
 	// Set GasSchedule for dynamic gas overrides (patched gas functions read from this)
 	if gasSchedule != nil && gasSchedule.HasOverrides() {
@@ -569,9 +572,11 @@ func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*GasS
 	header := block.Header()
 	txNumReader := s.blockReader.TxnumReader()
 
-	// Get chain rules for this block
+	// Get chain rules for this block (use DB chain config for correct fork rules)
+	execChainConfig := s.chainConfigForExecution(ctx)
+
 	_, blockCtx, _, chainRules, _, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, s.chainConfig, s.blockReader, nil, txNumReader, tx, 0,
+		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, tx, 0,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)
