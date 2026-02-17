@@ -28,6 +28,7 @@ import (
 	"github.com/erigontech/erigon/common"
 	"github.com/erigontech/erigon/db/rawdb"
 	"github.com/erigontech/erigon/execution/protocol"
+	"github.com/erigontech/erigon/execution/stagedsync/stages"
 	erigonstate "github.com/erigontech/erigon/execution/state"
 	erigontypes "github.com/erigontech/erigon/execution/types"
 	"github.com/erigontech/erigon/execution/vm"
@@ -214,6 +215,19 @@ func (s *Service) DebugTraceTransaction(
 
 	if !ok {
 		return nil, fmt.Errorf("transaction %s not found", hash)
+	}
+
+	// Verify that the execution stage has processed this block. The block may
+	// be visible in the DB (headers/bodies committed) before the execution stage
+	// commits its state changes. Tracing against incomplete historical state
+	// produces wrong results (reverts, incorrect gas).
+	lastExecutedBlock, err := stages.GetStageProgress(tx, stages.Execution)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get execution stage progress: %w", err)
+	}
+
+	if blockNum > lastExecutedBlock {
+		return nil, fmt.Errorf("block %d not yet executed (last executed: %d)", blockNum, lastExecutedBlock)
 	}
 
 	txNumReader := s.blockReader.TxnumReader()
