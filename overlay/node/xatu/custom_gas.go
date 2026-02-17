@@ -375,7 +375,11 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 			schedule.Overrides[vm.GasKeyPCIdBase] = params.IdentityBaseGas
 			schedule.Overrides[vm.GasKeyPCIdPerWord] = params.IdentityPerWordGas
 		case "MODEXP":
-			schedule.Overrides[vm.GasKeyPCModexpMinGas] = 200
+			if rules.IsOsaka {
+				schedule.Overrides[vm.GasKeyPCModexpMinGas] = 500
+			} else {
+				schedule.Overrides[vm.GasKeyPCModexpMinGas] = 200
+			}
 		case "BN254_PAIRING":
 			schedule.Overrides[vm.GasKeyPCBn254PairingBase] = params.Bn254PairingBaseGasIstanbul
 			schedule.Overrides[vm.GasKeyPCBn254PairingPerPair] = params.Bn254PairingPerPointGasIstanbul

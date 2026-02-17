@@ -157,8 +157,10 @@ func precompileMsm(schedule *GasSchedule, mulGasKey string, input []byte, pointS
 
 // precompileModexp applies the MODEXP min gas override.
 // The complex EIP-2565/7883 formula itself is not overridable — only the floor value is.
+// The fallback of 0 means "no additional floor" — defaultGas from RequiredGas() already
+// includes the correct fork-aware minimum (200 for EIP-2565, 500 for EIP-7883).
 func precompileModexp(schedule *GasSchedule, defaultGas uint64) uint64 {
-	minGas := schedule.GetOr(GasKeyPCModexpMinGas, 200)
+	minGas := schedule.GetOr(GasKeyPCModexpMinGas, 0)
 	if defaultGas < minGas {
 		return minGas
 	}
