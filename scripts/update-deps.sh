@@ -5,7 +5,7 @@ set -e
 
 echo "Adding erigone-specific dependencies..."
 
-go get github.com/ethpandaops/execution-processor@v0.1.6-0.20260217014044-57f9acf7eb85
+go get github.com/ethpandaops/execution-processor@v0.1.6-0.20260217053309-41c3095b4e46
 go get github.com/creasty/defaults@v1.8.0
 go get github.com/redis/go-redis/v9@v9.17.2
 go get github.com/sirupsen/logrus@v1.9.3
