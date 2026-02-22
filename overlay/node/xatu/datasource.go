@@ -323,6 +323,14 @@ func (s *Service) DebugTraceTransaction(
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}
 
+	// Disable nonce verification during tracing. The transaction already exists
+	// in a valid block, so re-checking the nonce is unnecessary. It also fails
+	// for EIP-7702 set-code transactions where a prior authorization in the same
+	// block incremented the sender's nonce before this transaction's turn.
+	if m, ok := msg.(*erigontypes.Message); ok {
+		m.SetCheckNonce(false)
+	}
+
 	// Create structlog tracer
 	tracer := NewStructLogTracer(StructLogConfig{
 		DisableStorage:   opts.DisableStorage,
