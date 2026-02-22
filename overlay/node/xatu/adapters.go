@@ -59,7 +59,8 @@ func newBlockAdapter(block *erigontypes.Block, chainConfig *chain.Config) *block
 
 // Number returns the block number.
 func (b *blockAdapter) Number() *big.Int {
-	return b.block.Number()
+	n := b.block.Number()
+	return n.ToBig()
 }
 
 // Hash returns the block hash.
@@ -74,7 +75,11 @@ func (b *blockAdapter) ParentHash() execution.Hash {
 
 // BaseFee returns the base fee per gas (EIP-1559), or nil for pre-London blocks.
 func (b *blockAdapter) BaseFee() *big.Int {
-	return b.block.BaseFee()
+	bf := b.block.BaseFee()
+	if bf == nil {
+		return nil
+	}
+	return bf.ToBig()
 }
 
 // Transactions returns all transactions in the block.

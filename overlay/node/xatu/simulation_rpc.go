@@ -454,6 +454,11 @@ func (s *Service) executeSingleTransaction(
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}
 
+	// Disable nonce verification during simulation replay (same rationale as tracing).
+	if typedMsg, ok := msg.(*erigontypes.Message); ok {
+		typedMsg.SetCheckNonce(false)
+	}
+
 	// Build VM config
 	vmConfig := vm.Config{
 		NoBaseFee: true,
@@ -512,18 +517,17 @@ func (s *Service) executeSingleTransaction(
 		accessListLen = uint64(len(accessList))
 		storageKeysLen = uint64(accessList.StorageKeys())
 	}
-	intrinsicGas, _, _ := fixedgas.IntrinsicGas(
-		txn.GetData(),
-		accessListLen,
-		storageKeysLen,
-		txn.GetTo() == nil,
-		chainRules.IsHomestead,
-		chainRules.IsIstanbul,
-		chainRules.IsShanghai,
-		chainRules.IsPrague,
-		false, // isAATxn
-		0,     // authorizationsLen
-	)
+	intrinsicGasResult, _ := fixedgas.IntrinsicGas(fixedgas.IntrinsicGasCalcArgs{
+		Data:               txn.GetData(),
+		AccessListLen:      accessListLen,
+		StorageKeysLen:     storageKeysLen,
+		IsContractCreation: txn.GetTo() == nil,
+		IsEIP2:             chainRules.IsHomestead,
+		IsEIP2028:          chainRules.IsIstanbul,
+		IsEIP3860:          chainRules.IsShanghai,
+		IsEIP7623:          chainRules.IsPrague,
+	})
+	intrinsicGas := intrinsicGasResult.RegularGas
 	if gasSchedule != nil {
 		vmSchedule := gasSchedule.ToVMGasSchedule()
 		if vmSchedule != nil && vmSchedule.HasIntrinsicOverrides() {
