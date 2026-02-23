@@ -419,7 +419,12 @@ func (s *Service) executeWithTracer(
 	// Execute
 	gp := new(protocol.GasPool).AddGas(msg.Gas()).AddBlobGas(msg.BlobGas())
 
-	result, err := protocol.ApplyMessage(evm, msg, gp, true, false, s.engine)
+	// Enable gasBailout to skip the sender balance check. The transaction already
+	// exists in a valid block, so re-checking is unnecessary. It also fails for
+	// EIP-7702 set-code transactions where a prior authorization in the same block
+	// altered account balances/code, and the historical state reader doesn't reflect
+	// those intra-block changes correctly (see erigontech/erigon#17232).
+	result, err := protocol.ApplyMessage(evm, msg, gp, true, true, s.engine)
 	if err != nil {
 		return nil, err
 	}
