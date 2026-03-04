@@ -748,7 +748,7 @@ index a72e850..85d3653 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 79c4ae7..58037a9 100644
+index e91e455..43bb65b 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
 @@ -1175,8 +1175,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
