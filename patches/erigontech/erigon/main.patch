@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 1caf323..e9d665b 100644
+index c7d70a1..e897c99 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -1113,6 +1113,12 @@ var (
@@ -261,7 +261,7 @@ index ff18f09..719b0a8 100644
  		gas := availableGas - availableGas/64
  		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150
 diff --git a/execution/vm/gas_table.go b/execution/vm/gas_table.go
-index b2a70fc..3637396 100644
+index 372ac51..7b96089 100644
 --- a/execution/vm/gas_table.go
 +++ b/execution/vm/gas_table.go
 @@ -32,7 +32,7 @@ import (
@@ -462,25 +462,25 @@ index b2a70fc..3637396 100644
  	if err != nil {
  		return 0, transfersValue, err
  	}
-@@ -456,7 +456,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas uint64, availableGa
- 			return 0, err
- 		}
+@@ -460,7 +460,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas uint64, availableGa
+ 		// whether the CALL proceeds or transfers value.
+ 		evm.IntraBlockState().MarkAddressAccess(address, false)
  		if transfersValue && empty {
 -			accountGas = params.CallNewAccountGas
 +			accountGas = evm.GasSchedule.GetOr(GasKeyCallNewAccount, params.CallNewAccountGas)
- 			// Record the address access for BAL tracking, but only when the CALL
- 			// will actually proceed. In read-only (STATICCALL) context, CALL with
- 			// value > 0 will be rejected by ErrWriteProtection before evm.Call()
-@@ -471,7 +471,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas uint64, availableGa
- 			return 0, err
  		}
+ 	} else {
+ 		exists, err := evm.IntraBlockState().Exist(address)
+@@ -470,7 +470,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas uint64, availableGa
+ 		// Exist() reads account state for gas calculation — record for BAL.
+ 		evm.IntraBlockState().MarkAddressAccess(address, false)
  		if !exists {
 -			accountGas = params.CallNewAccountGas
 +			accountGas = evm.GasSchedule.GetOr(GasKeyCallNewAccount, params.CallNewAccountGas)
  		}
  	}
  
-@@ -507,7 +507,7 @@ func statefulGasCallCode(evm *EVM, callContext *CallContext, gas uint64, availab
+@@ -506,7 +506,7 @@ func statefulGasCallCode(evm *EVM, callContext *CallContext, gas uint64, availab
  }
  
  func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas uint64, memorySize uint64, withCallGasCalc bool) (uint64, bool, error) {
@@ -489,7 +489,7 @@ index b2a70fc..3637396 100644
  	if err != nil {
  		return 0, false, err
  	}
-@@ -516,7 +516,7 @@ func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas uint6
+@@ -515,7 +515,7 @@ func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas uint6
  		overflow bool
  	)
  	if !callContext.Stack.Back(2).IsZero() {
@@ -498,7 +498,7 @@ index b2a70fc..3637396 100644
  	}
  
  	if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
-@@ -560,7 +560,7 @@ func statefulGasDelegateCall(evm *EVM, callContext *CallContext, gas uint64, ava
+@@ -559,7 +559,7 @@ func statefulGasDelegateCall(evm *EVM, callContext *CallContext, gas uint64, ava
  }
  
  func statelessGasDelegateCall(evm *EVM, callContext *CallContext, availableGas uint64, memorySize uint64, withCallGasCalc bool) (uint64, bool, error) {
@@ -507,7 +507,7 @@ index b2a70fc..3637396 100644
  	if err != nil {
  		return 0, false, err
  	}
-@@ -611,7 +611,7 @@ func statefulGasStaticCall(evm *EVM, callContext *CallContext, gas uint64, avail
+@@ -610,7 +610,7 @@ func statefulGasStaticCall(evm *EVM, callContext *CallContext, gas uint64, avail
  }
  
  func statelessGasStaticCall(evm *EVM, callContext *CallContext, availableGas uint64, memorySize uint64, withCallGasCalc bool) (uint64, bool, error) {
@@ -516,7 +516,7 @@ index b2a70fc..3637396 100644
  	if err != nil {
  		return 0, false, err
  	}
-@@ -666,7 +666,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas uint64, me
+@@ -667,7 +667,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas uint64, me
  				return 0, err
  			}
  			if empty && !balance.IsZero() {
@@ -525,9 +525,9 @@ index b2a70fc..3637396 100644
  			}
  		} else {
  			exist, err := evm.IntraBlockState().Exist(address)
-@@ -674,7 +674,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas uint64, me
- 				return 0, err
- 			}
+@@ -677,7 +677,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas uint64, me
+ 			// Exist() reads account state for gas calculation — record for BAL.
+ 			evm.IntraBlockState().MarkAddressAccess(address, false)
  			if !exist {
 -				gas += params.CreateBySelfdestructGas
 +				gas += evm.GasSchedule.GetOr(GasKeyCreateBySelfDestruct, params.CreateBySelfdestructGas)
@@ -744,10 +744,10 @@ index b8bd794..ae577a1 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index c0cb050..0e5802d 100644
+index e1f8cff..1490fb0 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1121,8 +1121,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+@@ -1139,8 +1139,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
  		}
  	}
  
@@ -772,7 +772,7 @@ index c0cb050..0e5802d 100644
  		err := rpcdaemoncli.StartRpcServer(ctx, &httpRpcCfg, s.apiList, s.logger)
  		if err != nil && !errors.Is(err, context.Canceled) {
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
-index 346c5b2..1d6eaf3 100644
+index 4626556..8a25c57 100644
 --- a/node/ethconfig/config.go
 +++ b/node/ethconfig/config.go
 @@ -244,6 +244,8 @@ type Config struct {
