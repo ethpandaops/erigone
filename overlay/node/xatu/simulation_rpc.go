@@ -26,7 +26,7 @@ import (
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/db/kv/rawdbv3"
 	"github.com/erigontech/erigon/execution/protocol"
-	"github.com/erigontech/erigon/execution/protocol/fixedgas"
+	"github.com/erigontech/erigon/execution/protocol/mdgas"
 	erigontypes "github.com/erigontech/erigon/execution/types"
 	"github.com/erigontech/erigon/execution/vm"
 	"github.com/erigontech/erigon/rpc/transactions"
@@ -517,7 +517,7 @@ func (s *Service) executeSingleTransaction(
 		accessListLen = uint64(len(accessList))
 		storageKeysLen = uint64(accessList.StorageKeys())
 	}
-	intrinsicGasResult, _ := fixedgas.IntrinsicGas(fixedgas.IntrinsicGasCalcArgs{
+	intrinsicGasResult, _ := mdgas.IntrinsicGas(mdgas.IntrinsicGasCalcArgs{
 		Data:               txn.GetData(),
 		AccessListLen:      accessListLen,
 		StorageKeysLen:     storageKeysLen,

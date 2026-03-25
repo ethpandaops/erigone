@@ -207,7 +207,7 @@ func (t *transactionAdapter) BlobGas() uint64 {
 func (t *transactionAdapter) BlobGasFeeCap() *big.Int {
 	// BlobTx is the only transaction type with MaxFeePerBlobGas
 	if blobTx, ok := t.tx.(*erigontypes.BlobTx); ok {
-		if blobTx.MaxFeePerBlobGas != nil {
+		if !blobTx.MaxFeePerBlobGas.IsZero() {
 			return blobTx.MaxFeePerBlobGas.ToBig()
 		}
 	}
