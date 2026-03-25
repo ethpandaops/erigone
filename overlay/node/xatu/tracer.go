@@ -266,7 +266,8 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 
 	// Capture refund
 	if t.env != nil {
-		refund := t.env.IntraBlockState.GetRefund()
+		refundMdGas := t.env.IntraBlockState.GetRefund()
+		refund := refundMdGas.Regular
 		log.Refund = &refund
 	}
 

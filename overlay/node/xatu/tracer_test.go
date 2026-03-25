@@ -23,6 +23,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/erigontech/erigon/execution/protocol/mdgas"
 	"github.com/erigontech/erigon/execution/tracing"
 	"github.com/erigontech/erigon/execution/types/accounts"
 	"github.com/erigontech/erigon/execution/vm"
@@ -46,7 +47,7 @@ func (m *mockIntraBlockState) GetState(accounts.Address, accounts.StorageKey) (u
 	return uint256.Int{}, nil
 }
 func (m *mockIntraBlockState) Exist(accounts.Address) (bool, error) { return false, nil }
-func (m *mockIntraBlockState) GetRefund() uint64                    { return m.refund }
+func (m *mockIntraBlockState) GetRefund() mdgas.MdGas               { return mdgas.MdGas{Regular: m.refund} }
 
 // TestRefundCapture verifies that refund values are captured when OnTxStart
 // is called to initialize the tracer with a VMContext.
