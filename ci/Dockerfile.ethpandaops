@@ -7,7 +7,7 @@
 ## Multi-arch build:
 ##   docker buildx build -f Dockerfile.ethpandaops --platform linux/amd64,linux/arm64 -t ethpandaops/erigone:latest .
 
-ARG BUILDER_IMAGE="golang:1.25.4-bookworm" \
+ARG BUILDER_IMAGE="golang:1.25.7-bookworm" \
     TARGET_BASE_IMAGE="debian:bookworm-slim" \
     BINARIES="erigon" \
     BUILD_DATE="Not defined" \
