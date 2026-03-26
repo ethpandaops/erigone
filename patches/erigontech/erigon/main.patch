@@ -643,7 +643,7 @@ index daae81f..e704a18 100644
  	frontierInstructionSet         = newFrontierInstructionSet()
  	homesteadInstructionSet        = newHomesteadInstructionSet()
 diff --git a/execution/vm/operations_acl.go b/execution/vm/operations_acl.go
-index 753c765..67be3c5 100644
+index 53c57d4..65ef5e5 100644
 --- a/execution/vm/operations_acl.go
 +++ b/execution/vm/operations_acl.go
 @@ -54,7 +54,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
@@ -766,7 +766,7 @@ index 753c765..67be3c5 100644
  			}
  		}
  
-@@ -320,7 +323,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -325,7 +328,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		if !evm.intraBlockState.AddressInAccessList(addr) {
  			// The WarmStorageReadCostEIP2929 (100) is already deducted in the form of a constant cost, so
  			// the cost to charge for cold access, if any, is Cold - Warm
@@ -775,7 +775,7 @@ index 753c765..67be3c5 100644
  			// Charge the remaining difference here already, to correctly calculate available
  			// gas for call
  			if availableGas.Regular < accessGas {
-@@ -379,9 +382,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -384,9 +387,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		var delegationGas uint64
  		if ok {
  			if !evm.intraBlockState.AddressInAccessList(dd) {
@@ -799,7 +799,7 @@ index 41c49b7..7c42202 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 488d84e..cb3bf73 100644
+index 005e69f..cfd7090 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
 @@ -1117,8 +1117,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
