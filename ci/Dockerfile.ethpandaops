@@ -9,7 +9,7 @@
 
 ARG BUILDER_IMAGE="golang:1.25.7-bookworm" \
     TARGET_BASE_IMAGE="debian:bookworm-slim" \
-    BINARIES="erigon" \
+    BINARIES="erigon integration" \
     BUILD_DATE="Not defined" \
     VCS_REF="Not defined" \
     VERSION="dev" \
