@@ -42,11 +42,11 @@ index dc353bf..52a46f1 100644
 +	}
 +	return x - y
 +}
-diff --git a/execution/protocol/state_transition.go b/execution/protocol/state_transition.go
-index 8abc07f..94c33c2 100644
---- a/execution/protocol/state_transition.go
-+++ b/execution/protocol/state_transition.go
-@@ -508,6 +508,16 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (result *
+diff --git a/execution/protocol/txn_executor.go b/execution/protocol/txn_executor.go
+index aecee19..1236918 100644
+--- a/execution/protocol/txn_executor.go
++++ b/execution/protocol/txn_executor.go
+@@ -505,6 +505,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  	// Check clause 1: compute intrinsic gas before preCheck so the EIP-7825
  	// cap can be checked there (before buyGas) for all fork variants.
  	intrinsicGasResult, overflow := st.calcIntrinsicGas(contractCreation, auths, accessTuples)
@@ -55,6 +55,7 @@ index 8abc07f..94c33c2 100644
 +	vmConfig := st.evm.Config()
 +	isEIP3860 := vmConfig.HasEip3860(rules)
 +
++	// Xatu: Allow custom intrinsic gas schedule overrides for gas simulation
 +	if st.evm.GasSchedule != nil && st.evm.GasSchedule.HasIntrinsicOverrides() {
 +		gas, floorGas := vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
 +		intrinsicGasResult = mdgas.IntrinsicGasCalcResult{RegularGas: gas, FloorGasCost: floorGas}
@@ -63,7 +64,7 @@ index 8abc07f..94c33c2 100644
  	if overflow {
  		return nil, ErrGasUintOverflow
  	}
-@@ -517,10 +527,6 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (result *
+@@ -514,10 +525,6 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  		return nil, err
  	}
  
@@ -218,7 +219,7 @@ index 2ba00fe..2523c10 100644
  }
  
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
-index 9e54533..334f6a7 100644
+index 90ba84b..4737cf4 100644
 --- a/execution/vm/evm.go
 +++ b/execution/vm/evm.go
 @@ -95,6 +95,10 @@ type EVM struct {
@@ -251,7 +252,7 @@ index 9e54533..334f6a7 100644
  			gasRemaining, regularGasOk = useMdGas(evm, gasRemaining, regularGas, mdgas.RegularGas, evm.Config().Tracer, tracing.GasChangeCallCodeStorage)
  		}
 diff --git a/execution/vm/export_test.go b/execution/vm/export_test.go
-index 97ff0ec..566f941 100644
+index 97ff0ec..0636e08 100644
 --- a/execution/vm/export_test.go
 +++ b/execution/vm/export_test.go
 @@ -17,5 +17,5 @@
@@ -259,23 +260,8 @@ index 97ff0ec..566f941 100644
  
  func MemoryGasCost(callContext *CallContext, newMemSize uint64) (uint64, error) {
 -	return memoryGasCost(callContext, newMemSize)
-+	return memoryGasCost(nil, callContext, newMemSize)
++	return memoryGasCost(&EVM{}, callContext, newMemSize)
  }
-diff --git a/execution/vm/gas.go b/execution/vm/gas.go
-index ff18f09..719b0a8 100644
---- a/execution/vm/gas.go
-+++ b/execution/vm/gas.go
-@@ -39,6 +39,10 @@ const (
- // As part of EIP 150 (TangerineWhistle), the returned gas is gas - base * 63 / 64.
- func callGas(isEip150 bool, availableGas, base uint64, callCost *uint256.Int) (uint64, error) {
- 	if isEip150 {
-+		// Guard against underflow: if availableGas < base, no gas can be passed to the child call
-+		if availableGas < base {
-+			return 0, nil
-+		}
- 		availableGas = availableGas - base
- 		gas := availableGas - availableGas/64
- 		// If the bit length exceeds 64 bit we know that the newly calculated "gas" for EIP150
 diff --git a/execution/vm/gas_table.go b/execution/vm/gas_table.go
 index b1083f8..0328798 100644
 --- a/execution/vm/gas_table.go
