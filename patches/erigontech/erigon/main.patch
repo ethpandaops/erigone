@@ -76,7 +76,7 @@ index aecee19..1236918 100644
  		// Increment the nonce for the next transaction
  		nonce, err := st.state.GetNonce(sender)
 diff --git a/execution/vm/contracts.go b/execution/vm/contracts.go
-index b7ced08..3ff4999 100644
+index 6287750..857d05f 100644
 --- a/execution/vm/contracts.go
 +++ b/execution/vm/contracts.go
 @@ -299,9 +299,12 @@ func ActivePrecompiles(rules *chain.Rules) []accounts.Address {
