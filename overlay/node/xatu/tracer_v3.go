@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build embedded
+//go:build embedded && !erigon_main
 
 package xatu
 
@@ -23,9 +23,9 @@ import (
 
 	"github.com/ethpandaops/execution-processor/pkg/ethereum/execution"
 
+	"github.com/erigontech/erigon/common"
 	"github.com/erigontech/erigon/execution/tracing"
 	"github.com/erigontech/erigon/execution/types"
-	"github.com/erigontech/erigon/execution/types/accounts"
 	"github.com/erigontech/erigon/execution/vm"
 )
 
@@ -120,7 +120,8 @@ func (t *StructLogTracer) Hooks() *tracing.Hooks {
 }
 
 // OnTxStart is called when a transaction starts.
-func (t *StructLogTracer) OnTxStart(env *tracing.VMContext, _ types.Transaction, _ accounts.Address) {
+// In v3, the hook uses common.Address instead of accounts.Address.
+func (t *StructLogTracer) OnTxStart(env *tracing.VMContext, _ types.Transaction, _ common.Address) {
 	t.env = env
 }
 
@@ -134,10 +135,7 @@ func (t *StructLogTracer) OnTxEnd(receipt *types.Receipt, err error) {
 		return
 	}
 
-	// EIP-7778 note: Receipt.GasUsed is unchanged — it remains the post-refund value
-	// (what the user pays). The EIP-7778 split only affects ExecutionResult (which now
-	// has ReceiptGasUsed and BlockGasUsed). The Receipt struct's GasUsed field and its
-	// derivation from CumulativeGasUsed are not affected.
+	// Receipt.GasUsed is the post-refund value (what the user pays).
 	t.gasUsed = receipt.GasUsed
 }
 
@@ -266,8 +264,7 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 
 	// Capture refund
 	if t.env != nil {
-		refundMdGas := t.env.IntraBlockState.GetRefund()
-		refund := refundMdGas.Regular
+		refund := getRefundValue(t.env.IntraBlockState)
 		log.Refund = &refund
 	}
 

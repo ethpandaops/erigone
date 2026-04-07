@@ -219,7 +219,7 @@ index 2ba00fe..2523c10 100644
  }
  
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
-index 90ba84b..4737cf4 100644
+index fb9db73..af29d27 100644
 --- a/execution/vm/evm.go
 +++ b/execution/vm/evm.go
 @@ -95,6 +95,10 @@ type EVM struct {

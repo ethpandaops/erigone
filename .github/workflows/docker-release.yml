@@ -94,6 +94,13 @@ jobs:
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
+          # Determine build tags: main gets erigon_main
+          BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
+          if [ "$REF" = "main" ]; then
+            BUILD_TAGS="${BUILD_TAGS},erigon_main"
+          fi
+          echo "build_tags=${BUILD_TAGS}" >> $GITHUB_OUTPUT
+
       - name: Build and push erigone image (multi-arch)
         uses: docker/build-push-action@v5
         with:
@@ -103,6 +110,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.tag }}-${{ matrix.ref }}
             VCS_REF=${{ steps.meta.outputs.git_commit }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            BUILD_TAGS=${{ steps.tags.outputs.build_tags }}
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.tags.outputs.tags }}

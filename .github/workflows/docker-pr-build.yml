@@ -67,6 +67,15 @@ jobs:
         run: |
           ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.ref }}" --ci --skip-build
 
+      - name: Determine build tags
+        id: build_config
+        run: |
+          BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
+          if [ "${{ matrix.ref }}" = "main" ]; then
+            BUILD_TAGS="${BUILD_TAGS},erigon_main"
+          fi
+          echo "build_tags=${BUILD_TAGS}" >> $GITHUB_OUTPUT
+
       - name: Build and push erigone image (multi-arch)
         uses: docker/build-push-action@v5
         with:
@@ -76,6 +85,7 @@ jobs:
             VERSION=${{ steps.pr_info.outputs.short_sha }}
             VCS_REF=${{ steps.pr_info.outputs.commit_sha }}
             BUILD_DATE=${{ steps.pr_info.outputs.build_date }}
+            BUILD_TAGS=${{ steps.build_config.outputs.build_tags }}
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |

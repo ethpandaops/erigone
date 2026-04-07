@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build embedded
+//go:build embedded && !erigon_main
 
 package xatu
 
 import (
+	"github.com/erigontech/erigon/common"
 	"github.com/erigontech/erigon/execution/tracing"
 	"github.com/erigontech/erigon/execution/types"
-	"github.com/erigontech/erigon/execution/types/accounts"
 	"github.com/erigontech/erigon/execution/vm"
 	"github.com/holiman/uint256"
 )
@@ -109,7 +109,8 @@ func (t *SimulationTracer) Hooks() *tracing.Hooks {
 }
 
 // OnTxStart is called when a transaction starts.
-func (t *SimulationTracer) OnTxStart(env *tracing.VMContext, txn types.Transaction, from accounts.Address) {
+// In v3, the hook uses common.Address instead of accounts.Address.
+func (t *SimulationTracer) OnTxStart(env *tracing.VMContext, txn types.Transaction, from common.Address) {
 	t.env = env
 	t.totalGasUsed = 0
 }
@@ -127,7 +128,8 @@ func (t *SimulationTracer) OnTxEnd(_ *types.Receipt, _ error) {
 }
 
 // OnEnter is called when a call frame is entered.
-func (t *SimulationTracer) OnEnter(depth int, typ byte, from accounts.Address, to accounts.Address, precompile bool, input []byte, gas uint64, value uint256.Int, code []byte) {
+// In v3, the hook uses common.Address instead of accounts.Address.
+func (t *SimulationTracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, precompile bool, input []byte, gas uint64, value uint256.Int, code []byte) {
 	// Get the call type name from the opcode
 	typName := opcodeStrings[typ]
 	if typName == "" {

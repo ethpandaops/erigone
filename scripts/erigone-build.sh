@@ -229,9 +229,16 @@ fi
 
 # Build the project
 echo ""
-echo "Building erigon with embedded tags..."
+
+# Determine build tags: main gets erigon_main for build-tagged overlay variants
+BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
+if [ "$BRANCH" = "main" ]; then
+    BUILD_TAGS="$BUILD_TAGS,erigon_main"
+fi
+
+echo "Building erigon with tags: $BUILD_TAGS..."
 cd erigon
-if make erigon BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm; then
+if make erigon BUILD_TAGS="$BUILD_TAGS"; then
     echo "Build completed successfully!"
     cd ..
 
