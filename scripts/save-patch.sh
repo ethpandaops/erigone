@@ -77,8 +77,8 @@ fi
 ORG=$(echo "$ORG_REPO" | cut -d'/' -f1)
 REPO=$(echo "$ORG_REPO" | cut -d'/' -f2)
 
-PATCH_DIR="$REPO_ROOT/patches/$ORG/$REPO"
-PATCH_FILE="$PATCH_DIR/$BRANCH.patch"
+PATCH_DIR="$REPO_ROOT/patches/$ORG/$REPO/$BRANCH"
+PATCH_FILE="$PATCH_DIR/base.patch"
 
 if [ "$QUIET" = false ]; then
     echo "========================================="

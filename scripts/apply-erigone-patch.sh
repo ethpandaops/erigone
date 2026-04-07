@@ -51,16 +51,16 @@ find_patch_files() {
     local patches=()
 
     # Base patch is required
-    local base_patch="$patch_dir/$branch.patch"
+    local base_patch="$patch_dir/$branch/base.patch"
     if [ -f "$base_patch" ]; then
         patches+=("$base_patch")
     else
-        echo "Error: Base patch not found at patches/$org/$repo/$branch.patch" >&2
+        echo "Error: Base patch not found at patches/$org/$repo/$branch/base.patch" >&2
         return 1
     fi
 
-    # Look for extension patches (e.g., main-01-gas-fix.patch)
-    for ext_patch in "$patch_dir/$branch"-*.patch; do
+    # Look for extension patches (e.g., 01-gas-fix.patch) sorted alphabetically
+    for ext_patch in "$patch_dir/$branch"/[0-9]*.patch; do
         if [ -f "$ext_patch" ]; then
             patches+=("$ext_patch")
         fi

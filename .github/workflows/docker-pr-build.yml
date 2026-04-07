@@ -8,12 +8,27 @@ env:
   DOCKER_REPO: ethpandaops/erigone
 
 jobs:
-  build-and-push:
+  discover-targets:
     # Run when 'build-image' label is present
     if: |
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'build-image'))
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Discover patch targets
+        id: discover
+        uses: ./.github/actions/discover-patches
+
+  build-and-push:
+    needs: discover-targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.discover-targets.outputs.matrix)}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,17 +57,15 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
           SHORT_SHA="${COMMIT_SHA:0:7}"
-          DOCKER_TAG="pr-${PR_NUMBER}-${SHORT_SHA}"
           BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
           echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "docker_tag=${DOCKER_TAG}" >> $GITHUB_OUTPUT
           echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
 
-      - name: Build patched upstream
+      - name: Build patched upstream (${{ matrix.ref }})
         run: |
-          ./scripts/erigone-build.sh -r erigontech/erigon -b main --ci --skip-build
+          ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.ref }}" --ci --skip-build
 
       - name: Build and push erigone image (multi-arch)
         uses: docker/build-push-action@v5
@@ -66,8 +79,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.DOCKER_REPO }}:${{ steps.pr_info.outputs.docker_tag }}
-            ${{ env.DOCKER_REPO }}:${{ steps.pr_info.outputs.commit_sha }}
+            ${{ env.DOCKER_REPO }}:pr-${{ steps.pr_info.outputs.pr_number }}-${{ steps.pr_info.outputs.short_sha }}-${{ matrix.ref }}
+            ${{ env.DOCKER_REPO }}:${{ steps.pr_info.outputs.commit_sha }}-${{ matrix.ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -76,18 +89,22 @@ jobs:
         if: github.event.action == 'labeled'
         with:
           script: |
-            const dockerTag = '${{ steps.pr_info.outputs.docker_tag }}';
+            const prNumber = '${{ steps.pr_info.outputs.pr_number }}';
+            const shortSha = '${{ steps.pr_info.outputs.short_sha }}';
             const commitSha = '${{ steps.pr_info.outputs.commit_sha }}';
+            const ref = '${{ matrix.ref }}';
             const dockerRepo = process.env.DOCKER_REPO;
+            const dockerTag = `pr-${prNumber}-${shortSha}-${ref}`;
 
-            const comment = `## Docker Image Built
+            const comment = `## Docker Image Built (${ref})
 
             Multi-architecture (amd64/arm64) image has been built and pushed to Docker Hub:
 
             **Repository**: \`${dockerRepo}\`
+            **Upstream ref**: \`${ref}\`
             **Tags**:
             - \`${dockerTag}\`
-            - \`${commitSha}\`
+            - \`${commitSha}-${ref}\`
 
             ### Usage
             \`\`\`bash

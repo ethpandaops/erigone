@@ -1,0 +1,26 @@
+name: 'Discover Patch Targets'
+description: 'Discovers all patch targets from the patches directory structure'
+
+outputs:
+  matrix:
+    description: 'JSON matrix of patch targets for use with strategy.matrix'
+    value: ${{ steps.discover.outputs.matrix }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Discover patch targets
+      id: discover
+      shell: bash
+      run: |
+        targets=$(find patches -name "base.patch" -type f | sort | while read patch; do
+          dir=$(dirname "$patch")
+          ref=$(basename "$dir")
+          repo_path=$(echo "$dir" | sed 's|^patches/||; s|/[^/]*$||')
+          org=$(echo "$repo_path" | cut -d'/' -f1)
+          repo=$(echo "$repo_path" | cut -d'/' -f2)
+          echo "{\"org\":\"$org\",\"repo\":\"$repo\",\"ref\":\"$ref\"}"
+        done | jq -sc '.')
+
+        echo "Found targets: $targets"
+        echo "matrix={\"include\":$targets}" >> $GITHUB_OUTPUT
