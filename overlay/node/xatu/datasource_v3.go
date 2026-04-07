@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build embedded
+//go:build embedded && !erigon_main
 
 package xatu
 
@@ -179,7 +179,8 @@ func (s *Service) BlockReceipts(ctx context.Context, number *big.Int) ([]executi
 		return nil, fmt.Errorf("block %d not found", number)
 	}
 
-	txNumReader := s.blockReader.TxnumReader()
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
 
 	receipts, err := rawdb.ReadReceiptsCacheV2(tx, block, txNumReader)
 	if err != nil {
@@ -217,15 +218,17 @@ func (s *Service) TransactionReceipt(ctx context.Context, hash string) (executio
 		return nil, fmt.Errorf("block %d not found for transaction %s", blockNum, hash)
 	}
 
-	txNumReader := s.blockReader.TxnumReader()
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
 
 	receipts, err := rawdb.ReadReceiptsCacheV2(tx, block, txNumReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get receipts for block %d: %w", blockNum, err)
 	}
 
-	// Calculate txIndex from txNum
-	txNumMin, err := txNumReader.Min(ctx, tx, blockNum)
+	// Calculate txIndex from txNum.
+	// In v3, Min takes (tx, blockNum) without context.
+	txNumMin, err := txNumReader.Min(tx, blockNum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get min txNum: %w", err)
 	}
@@ -279,10 +282,12 @@ func (s *Service) DebugTraceTransaction(
 		return nil, fmt.Errorf("block %d not yet executed (last executed: %d)", blockNum, lastExecutedBlock)
 	}
 
-	txNumReader := s.blockReader.TxnumReader()
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
 
-	// Calculate txIndex from txNum
-	txNumMin, err := txNumReader.Min(ctx, tx, blockNum)
+	// Calculate txIndex from txNum.
+	// In v3, Min takes (tx, blockNum) without context.
+	txNumMin, err := txNumReader.Min(tx, blockNum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get min txNum: %w", err)
 	}
@@ -309,9 +314,11 @@ func (s *Service) DebugTraceTransaction(
 	// config from init may be stale if fork schedules were updated in the DB.
 	execChainConfig := s.chainConfigForExecution(ctx)
 
-	// Compute block context
+	// Compute block context.
+	// In v3, ComputeBlockContext does not take blockReader and nil separately;
+	// it takes txNumsReader directly (no nil argument).
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, tx, txIndex,
+		ctx, s.engine, header, execChainConfig, s.blockReader, txNumReader, tx, txIndex,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)
@@ -349,18 +356,9 @@ func (s *Service) DebugTraceTransaction(
 	}
 
 	// Build trace result.
-	//
-	// EIP-7778 note: Erigon's ExecutionResult was split from a single GasUsed field into
-	// ReceiptGasUsed (post-refund, what the user pays) and BlockGasUsed (pre-refund, for
-	// block gas limit accounting). We use ReceiptGasUsed here because trace.Gas feeds into
-	// execution-processor's computeIntrinsicGas() formula, which expects the post-refund
-	// receipt gas value. The formula is:
-	//   intrinsic = receiptGas - gasCumulative + gasRefund  (uncapped)
-	//   intrinsic = receiptGas * 5/4 - gasCumulative        (capped)
-	// This remains correct because ReceiptGasUsed preserves the same post-refund semantics
-	// that GasUsed had before EIP-7778.
+	// In v3, ExecutionResult has a single GasUsed field (post-refund).
 	trace := tracer.GetTraceTransaction()
-	trace.Gas = result.ReceiptGasUsed
+	trace.Gas = result.GasUsed
 	trace.Failed = result.Err != nil
 
 	if len(result.ReturnData) > 0 {

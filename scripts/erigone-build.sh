@@ -65,11 +65,70 @@ fi
 if [ -n "$COMMIT" ]; then
     echo "Testing with repository: $ORG/$REPO on branch: $BRANCH at commit: $COMMIT"
 else
-    echo "Testing with repository: $ORG/$REPO on branch: $BRANCH"
+    echo "Testing with repository: $ORG/$REPO on ref: $BRANCH"
 fi
 
 # Store the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check if the current checkout matches the desired ref (branch or tag)
+is_on_correct_ref() {
+    # Check branch first
+    local current_branch
+    current_branch=$(git branch --show-current 2>/dev/null)
+    if [ -n "$current_branch" ] && [ "$current_branch" = "$BRANCH" ]; then
+        return 0
+    fi
+
+    # Check tag (detached HEAD on correct tag)
+    local current_tag
+    current_tag=$(git describe --tags --exact-match HEAD 2>/dev/null)
+    if [ -n "$current_tag" ] && [ "$current_tag" = "$BRANCH" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Check if BRANCH refers to a tag on the remote
+is_remote_tag() {
+    git ls-remote --tags "https://github.com/$ORG/$REPO.git" "$BRANCH" 2>/dev/null | grep -q "refs/tags/$BRANCH"
+}
+
+# Clone the repository fresh
+clone_repo() {
+    echo "Cloning repository..."
+    if [ -n "$COMMIT" ]; then
+        git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+        cd erigon && git checkout "$COMMIT" && cd ..
+    else
+        git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
+    fi
+}
+
+# Clean working directory (handles interactive/CI)
+clean_working_dir() {
+    if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        if [ "$CI_MODE" = true ]; then
+            echo "CI mode: Auto-cleaning erigon directory..."
+            git reset --hard
+            git clean -fd
+        else
+            echo "WARNING: erigon directory has uncommitted changes"
+            git status --short | head -20
+            read -p "Clean erigon directory before continuing? (y/N) " -n 1 -r
+            echo ""
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                git reset --hard
+                git clean -fd
+            else
+                echo "Cannot continue with uncommitted changes. Exiting."
+                cd ..
+                exit 1
+            fi
+        fi
+    fi
+}
 
 # Check if erigon directory exists and handle it
 if [ -d "erigon" ]; then
@@ -85,47 +144,10 @@ if [ -d "erigon" ]; then
             cd ..
             echo "Removing existing erigon directory..."
             rm -rf erigon
-            echo "Cloning repository..."
+            clone_repo
+        elif is_on_correct_ref; then
+            # Already on correct ref, check for updates
             if [ -n "$COMMIT" ]; then
-                git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-                cd erigon && git checkout "$COMMIT" && cd ..
-            else
-                git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-            fi
-        else
-            CURRENT_BRANCH=$(git branch --show-current)
-            if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
-                echo "Branch mismatch: current=$CURRENT_BRANCH, expected=$BRANCH"
-
-                if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-                    if [ "$CI_MODE" = true ]; then
-                        echo "CI mode: Auto-cleaning erigon directory..."
-                        git reset --hard
-                        git clean -fd
-                    else
-                        echo "WARNING: erigon directory has uncommitted changes"
-                        git status --short | head -20
-                        read -p "Clean erigon directory before switching branches? (y/N) " -n 1 -r
-                        echo ""
-                        if [[ $REPLY =~ ^[Yy]$ ]]; then
-                            git reset --hard
-                            git clean -fd
-                        else
-                            echo "Cannot switch branches with uncommitted changes. Exiting."
-                            cd ..
-                            exit 1
-                        fi
-                    fi
-                fi
-
-                echo "Switching to branch $BRANCH..."
-                git fetch --depth 1 origin "$BRANCH":"$BRANCH"
-                git checkout "$BRANCH"
-            fi
-
-            # Update to target (specific commit or latest)
-            if [ -n "$COMMIT" ]; then
-                echo "Checking for target commit..."
                 LOCAL=$(git rev-parse HEAD)
                 if [ "$LOCAL" != "$COMMIT" ]; then
                     echo "Fetching and checking out commit $COMMIT..."
@@ -134,6 +156,9 @@ if [ -d "erigon" ]; then
                 else
                     echo "Already on target commit"
                 fi
+            elif is_remote_tag; then
+                # Tags are immutable, no update needed
+                echo "On tag $BRANCH, no update needed"
             else
                 echo "Checking for updates..."
                 git fetch --depth 1 origin "$BRANCH" || true
@@ -152,27 +177,23 @@ if [ -d "erigon" ]; then
             fi
 
             cd ..
+        else
+            echo "Ref mismatch: expected=$BRANCH"
+            clean_working_dir
+            # Easiest path: re-clone for the correct ref
+            cd ..
+            echo "Removing erigon directory for ref switch..."
+            rm -rf erigon
+            clone_repo
         fi
     else
         cd ..
         echo "Directory exists but is not a git repository, removing..."
         rm -rf erigon
-        echo "Cloning repository..."
-        if [ -n "$COMMIT" ]; then
-            git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-            cd erigon && git checkout "$COMMIT" && cd ..
-        else
-            git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-        fi
+        clone_repo
     fi
 else
-    echo "Cloning repository..."
-    if [ -n "$COMMIT" ]; then
-        git clone --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-        cd erigon && git checkout "$COMMIT" && cd ..
-    else
-        git clone --depth 1 --branch "$BRANCH" "https://github.com/$ORG/$REPO.git" erigon
-    fi
+    clone_repo
 fi
 
 # Clean erigon directory if it has leftover changes
@@ -208,9 +229,16 @@ fi
 
 # Build the project
 echo ""
-echo "Building erigon with embedded tags..."
+
+# Determine build tags: main gets erigon_main for build-tagged overlay variants
+BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
+if [ "$BRANCH" = "main" ]; then
+    BUILD_TAGS="$BUILD_TAGS,erigon_main"
+fi
+
+echo "Building erigon with tags: $BUILD_TAGS..."
 cd erigon
-if make erigon BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm; then
+if make erigon BUILD_TAGS="$BUILD_TAGS"; then
     echo "Build completed successfully!"
     cd ..
 

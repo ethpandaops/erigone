@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with Erigon. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build embedded
+//go:build embedded && !erigon_main
 
 package xatu
 
@@ -26,7 +26,6 @@ import (
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/db/kv/rawdbv3"
 	"github.com/erigontech/erigon/execution/protocol"
-	"github.com/erigontech/erigon/execution/protocol/mdgas"
 	erigontypes "github.com/erigontech/erigon/execution/types"
 	"github.com/erigontech/erigon/execution/vm"
 	"github.com/erigontech/erigon/rpc/transactions"
@@ -135,7 +134,9 @@ func (s *Service) SimulateBlockGas(
 	}
 
 	header := block.Header()
-	txNumReader := s.blockReader.TxnumReader()
+
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
 
 	// Initialize result
 	result := &SimulateBlockGasResult{
@@ -259,10 +260,12 @@ func (s *Service) SimulateTransactionGas(
 		return nil, fmt.Errorf("transaction %s is in block %d, not %d", req.TransactionHash, blockNum, req.BlockNumber)
 	}
 
-	txNumReader := s.blockReader.TxnumReader()
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
 
-	// Calculate txIndex
-	txNumMin, err := txNumReader.Min(ctx, tx, blockNum)
+	// Calculate txIndex.
+	// In v3, Min takes (tx, blockNum) without context.
+	txNumMin, err := txNumReader.Min(tx, blockNum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get min txNum: %w", err)
 	}
@@ -440,9 +443,11 @@ func (s *Service) executeSingleTransaction(
 	// Use chain config from DB to match what the RPC handler sees.
 	execChainConfig := s.chainConfigForExecution(ctx)
 
-	// Compute block context (creates fresh in-memory state)
+	// Compute block context (creates fresh in-memory state).
+	// In v3, ComputeBlockContext does not take blockReader and nil separately;
+	// it takes txNumsReader directly (no nil argument).
 	statedb, blockCtx, _, chainRules, signer, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, dbTx, txIndex,
+		ctx, s.engine, header, execChainConfig, s.blockReader, txNumReader, dbTx, txIndex,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)
@@ -509,35 +514,9 @@ func (s *Service) executeSingleTransaction(
 		status = "failed"
 	}
 
-	// Calculate intrinsic gas using Erigon's function
+	// Calculate intrinsic gas
 	txn := block.Transactions()[txIndex]
-	accessList := txn.GetAccessList()
-	var accessListLen, storageKeysLen uint64
-	if accessList != nil {
-		accessListLen = uint64(len(accessList))
-		storageKeysLen = uint64(accessList.StorageKeys())
-	}
-	intrinsicGasResult, _ := mdgas.IntrinsicGas(mdgas.IntrinsicGasCalcArgs{
-		Data:               txn.GetData(),
-		AccessListLen:      accessListLen,
-		StorageKeysLen:     storageKeysLen,
-		IsContractCreation: txn.GetTo() == nil,
-		IsEIP2:             chainRules.IsHomestead,
-		IsEIP2028:          chainRules.IsIstanbul,
-		IsEIP3860:          chainRules.IsShanghai,
-		IsEIP7623:          chainRules.IsPrague,
-	})
-	intrinsicGas := intrinsicGasResult.RegularGas
-	if gasSchedule != nil {
-		vmSchedule := gasSchedule.ToVMGasSchedule()
-		if vmSchedule != nil && vmSchedule.HasIntrinsicOverrides() {
-			intrinsicGas, _ = vm.CalcCustomIntrinsicGas(
-				vmSchedule, txn.GetData(), accessListLen, storageKeysLen,
-				txn.GetTo() == nil, chainRules.IsHomestead, chainRules.IsIstanbul,
-				chainRules.IsShanghai, chainRules.IsPrague, false, 0,
-			)
-		}
-	}
+	intrinsicGas := calcIntrinsicGasForTx(txn, chainRules, gasSchedule)
 
 	result := &executionResult{
 		Status:       status,
@@ -545,8 +524,9 @@ func (s *Service) executeSingleTransaction(
 		ApplyErr:     err, // Captures pre-execution errors (e.g. intrinsic gas too low)
 	}
 
+	// In v3, ExecutionResult has a single GasUsed field (post-refund).
 	if execResult != nil {
-		result.GasUsed = execResult.ReceiptGasUsed
+		result.GasUsed = execResult.GasUsed
 		result.Err = execResult.Err
 	}
 
@@ -574,13 +554,17 @@ func (s *Service) GetGasSchedule(ctx context.Context, blockNumber uint64) (*GasS
 	}
 
 	header := block.Header()
-	txNumReader := s.blockReader.TxnumReader()
 
-	// Get chain rules for this block (use DB chain config for correct fork rules)
+	// In v3, TxnumReader takes context.
+	txNumReader := s.blockReader.TxnumReader(ctx)
+
+	// Get chain rules for this block (use DB chain config for correct fork rules).
+	// In v3, ComputeBlockContext does not take blockReader and nil separately;
+	// it takes txNumsReader directly (no nil argument).
 	execChainConfig := s.chainConfigForExecution(ctx)
 
 	_, blockCtx, _, chainRules, _, err := transactions.ComputeBlockContext(
-		ctx, s.engine, header, execChainConfig, s.blockReader, nil, txNumReader, tx, 0,
+		ctx, s.engine, header, execChainConfig, s.blockReader, txNumReader, tx, 0,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute block context: %w", err)

@@ -36,7 +36,8 @@ ARG TARGETARCH \
     TARGETPLATFORM \
     BINARIES \
     VERSION \
-    VCS_REF
+    VCS_REF \
+    BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
 
 SHELL ["/bin/bash", "-c"]
 
@@ -65,9 +66,9 @@ RUN echo "DEBUG: building on ${TARGETARCH}${TARGETVARIANT}" && \
         echo "DEBUG: detected architecture ARM64"; \
         export CPU_FLAGS="GOARCH=arm64"; \
     fi && \
-    echo "DEBUG: cmd - make ${CPU_FLAGS} ${BINARIES} GOBIN=/build BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm" && \
+    echo "DEBUG: cmd - make ${CPU_FLAGS} ${BINARIES} GOBIN=/build BUILD_TAGS=${BUILD_TAGS}" && \
     make GO=xx-go CGO_ENABLED=1 GOARCH=${TARGETARCH} ${CPU_FLAGS} ${BINARIES} GOBIN=/build \
-        BUILD_TAGS=embedded,nosqlite,noboltdb,nosilkworm \
+        BUILD_TAGS=${BUILD_TAGS} \
         GIT_COMMIT=${VCS_REF} \
         GIT_TAG=${VERSION} && \
     find /build -ls

@@ -51,16 +51,16 @@ find_patch_files() {
     local patches=()
 
     # Base patch is required
-    local base_patch="$patch_dir/$branch.patch"
+    local base_patch="$patch_dir/$branch/base.patch"
     if [ -f "$base_patch" ]; then
         patches+=("$base_patch")
     else
-        echo "Error: Base patch not found at patches/$org/$repo/$branch.patch" >&2
+        echo "Error: Base patch not found at patches/$org/$repo/$branch/base.patch" >&2
         return 1
     fi
 
-    # Look for extension patches (e.g., main-01-gas-fix.patch)
-    for ext_patch in "$patch_dir/$branch"-*.patch; do
+    # Look for extension patches (e.g., 01-gas-fix.patch) sorted alphabetically
+    for ext_patch in "$patch_dir/$branch"/[0-9]*.patch; do
         if [ -f "$ext_patch" ]; then
             patches+=("$ext_patch")
         fi
@@ -163,29 +163,50 @@ done
 echo ""
 echo -e "${BLUE}=== Copying overlay files ===${NC}"
 
+# Determine which build-tagged variant files to skip.
+# Files containing _main (e.g. _main.go, _main_test.go) are for main only;
+# files containing _v3 are for non-main only.
+if [ "$BRANCH" = "main" ]; then
+    SKIP_PATTERN="_v3"
+else
+    SKIP_PATTERN="_main"
+fi
+
+# copy_overlay_files copies files from src to dst, skipping variant files
+# that don't match the current build target.
+copy_overlay_files() {
+    local src="$1"
+    local dst="$2"
+    for f in "$src"/*; do
+        [ -f "$f" ] || continue
+        local base
+        base=$(basename "$f")
+        # Strip .go or _test.go extension, then check for variant suffix
+        local stem="${base%.go}"
+        stem="${stem%_test}"
+        if [[ "$stem" == *"$SKIP_PATTERN" ]]; then
+            echo -e "${YELLOW}  Skipped $base (not for $BRANCH)${NC}"
+            continue
+        fi
+        cp "$f" "$dst/"
+        echo -e "${GREEN}  Copied $dst/$base${NC}"
+    done
+}
+
 # Copy xatu package
 if [ -d "$REPO_ROOT/overlay/node/xatu" ]; then
     mkdir -p node/xatu
-    cp -r "$REPO_ROOT/overlay/node/xatu/"* node/xatu/
-    echo -e "${GREEN}  Copied node/xatu/ ($(ls "$REPO_ROOT/overlay/node/xatu/" | wc -l | tr -d ' ') files)${NC}"
+    copy_overlay_files "$REPO_ROOT/overlay/node/xatu" "node/xatu"
 fi
 
 # Copy backend_xatu files
 if [ -d "$REPO_ROOT/overlay/node/eth" ]; then
-    for f in "$REPO_ROOT/overlay/node/eth/"*; do
-        [ -f "$f" ] || continue
-        cp "$f" node/eth/
-        echo -e "${GREEN}  Copied node/eth/$(basename "$f")${NC}"
-    done
+    copy_overlay_files "$REPO_ROOT/overlay/node/eth" "node/eth"
 fi
 
 # Copy execution/vm overlay files (gas_schedule.go, etc.)
 if [ -d "$REPO_ROOT/overlay/execution/vm" ]; then
-    for f in "$REPO_ROOT/overlay/execution/vm/"*; do
-        [ -f "$f" ] || continue
-        cp "$f" execution/vm/
-        echo -e "${GREEN}  Copied execution/vm/$(basename "$f")${NC}"
-    done
+    copy_overlay_files "$REPO_ROOT/overlay/execution/vm" "execution/vm"
 fi
 
 # Copy CI files

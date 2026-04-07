@@ -14,8 +14,23 @@ env:
   DOCKER_REPO: ethpandaops/erigone
 
 jobs:
-  build-and-push:
+  discover-targets:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Discover patch targets
+        id: discover
+        uses: ./.github/actions/discover-patches
+
+  build-and-push:
+    needs: discover-targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.discover-targets.outputs.matrix)}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,10 +69,37 @@ jobs:
           echo "git_commit_short=${GIT_COMMIT_SHORT}" >> $GITHUB_OUTPUT
           echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
 
-      - name: Build patched upstream
+      - name: Build patched upstream (${{ matrix.ref }})
         run: |
-          # Clone upstream, apply patches, copy overlay
-          ./scripts/erigone-build.sh -r erigontech/erigon -b main --ci --skip-build
+          ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.ref }}" --ci --skip-build
+
+      - name: Generate Docker tags
+        id: tags
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          REF="${{ matrix.ref }}"
+          SHORT="${{ steps.meta.outputs.git_commit_short }}"
+          REPO="${{ env.DOCKER_REPO }}"
+
+          # Every target gets ref-qualified tags
+          TAGS="${REPO}:${TAG}-${REF}"
+          TAGS="${TAGS},${REPO}:${SHORT}-${REF}"
+
+          # main also gets the unqualified tags
+          if [ "$REF" = "main" ]; then
+            TAGS="${TAGS},${REPO}:${TAG}"
+            TAGS="${TAGS},${REPO}:${SHORT}"
+            TAGS="${TAGS},${REPO}:latest"
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+          # Determine build tags: main gets erigon_main
+          BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
+          if [ "$REF" = "main" ]; then
+            BUILD_TAGS="${BUILD_TAGS},erigon_main"
+          fi
+          echo "build_tags=${BUILD_TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push erigone image (multi-arch)
         uses: docker/build-push-action@v5
@@ -65,32 +107,30 @@ jobs:
           context: ./erigon
           file: ./erigon/Dockerfile.ethpandaops
           build-args: |
-            VERSION=${{ steps.meta.outputs.tag }}
+            VERSION=${{ steps.meta.outputs.tag }}-${{ matrix.ref }}
             VCS_REF=${{ steps.meta.outputs.git_commit }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            BUILD_TAGS=${{ steps.tags.outputs.build_tags }}
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.DOCKER_REPO }}:${{ steps.meta.outputs.tag }}
-            ${{ env.DOCKER_REPO }}:${{ steps.meta.outputs.git_commit_short }}
-            ${{ env.DOCKER_REPO }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Create release summary
         run: |
+          TAGS="${{ steps.tags.outputs.tags }}"
           cat << EOF >> $GITHUB_STEP_SUMMARY
-          ## Docker Image Published
+          ## Docker Image Published (${{ matrix.ref }})
 
           The erigone image has been published to Docker Hub:
 
           ### Image Tags
-          - \`${DOCKER_REPO}:${{ steps.meta.outputs.tag }}\`
-          - \`${DOCKER_REPO}:${{ steps.meta.outputs.git_commit_short }}\`
-          - \`${DOCKER_REPO}:latest\`
+          $(echo "$TAGS" | tr ',' '\n' | sed 's/^/- `/' | sed 's/$/`/')
 
           ### Build Info
           - **Version**: ${{ steps.meta.outputs.tag }}
+          - **Upstream ref**: ${{ matrix.ref }}
           - **Commit**: ${{ steps.meta.outputs.git_commit }}
           - **Build Date**: ${{ steps.meta.outputs.build_date }}
           - **Platforms**: linux/amd64, linux/arm64

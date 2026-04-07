@@ -17,8 +17,10 @@ erigone/
 │       └── backend_xatu_stub.go  # No-op stub (//go:build !embedded)
 ├── patches/
 │   └── erigontech/erigon/
-│       ├── main.patch            # Integration: backend.go, config.go, flags.go
-│       └── main-01-gas-fix.patch # Bug fix: callGas underflow guard
+│       ├── main/
+│       │   └── base.patch        # Integration patch for main branch
+│       └── v3.3.10/
+│           └── base.patch        # Integration patch for v3.3.10 tag
 ├── ci/
 │   ├── Dockerfile.ethpandaops    # Multi-arch Docker build
 │   └── disable-upstream-workflows.sh
@@ -41,8 +43,11 @@ erigone/
 ### Build
 
 ```bash
-# Full build: clone upstream -> apply patches -> build binary
+# Full build against main (latest upstream)
 ./scripts/erigone-build.sh -r erigontech/erigon -b main
+
+# Full build against a tagged release (stable)
+./scripts/erigone-build.sh -r erigontech/erigon -b v3.3.10
 
 # The binary will be at erigon/build/bin/erigon
 ```
@@ -99,9 +104,17 @@ Instead of patching 39+ workflow renames, a simple script renames all non-ethpan
 
 ### Patches
 
-The actual patch surface is minimal:
-- **`main.patch`** (~70 lines): Adds `--xatu.config` flag and `initXatu()` call
-- **`main-01-gas-fix.patch`** (~15 lines): Guards `callGas()` against underflow
+Patches are organized per upstream ref in subdirectories under `patches/org/repo/`:
+
+```
+patches/erigontech/erigon/
+  main/base.patch       # Patch for main branch
+  v3.3.10/base.patch    # Patch for v3.3.10 tag
+```
+
+Extension patches (e.g., `01-gas-fix.patch`) can be placed in the same directory and are applied alphabetically after `base.patch`.
+
+The `-b` flag to build scripts accepts both branch names and tags.
 
 ## Development
 
@@ -148,7 +161,9 @@ git add patches/
 git commit -m "feat: add new-feature wiring to main patch"
 ```
 
-Changes are folded into `main.patch`. If the change is logically separate (like the gas fix), create a new extension patch instead — name it `main-02-your-feature.patch` and it will be picked up automatically in alphabetical order.
+Changes are folded into `base.patch`. If the change is logically separate, create a new extension patch instead — name it `01-your-feature.patch` in the same directory and it will be picked up automatically in alphabetical order.
+
+> **Note:** If you maintain patches for multiple upstream refs (e.g., `main` and `v3.3.10`), you'll need to port changes to each ref's patch directory separately.
 
 #### New dependency
 
@@ -185,10 +200,10 @@ git push
 
 ### Dropping a patch
 
-Extension patches (e.g. `main-01-gas-fix.patch`) are independently droppable. If upstream fixes the bug:
+Extension patches (e.g. `main/01-gas-fix.patch`) are independently droppable. If upstream fixes the bug:
 
 ```bash
-git rm patches/erigontech/erigon/main-01-gas-fix.patch
+git rm patches/erigontech/erigon/main/01-gas-fix.patch
 git commit -m "chore: drop gas-fix patch, merged upstream"
 ```
 
@@ -212,12 +227,14 @@ go get github.com/ethpandaops/execution-processor@<new-version>
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `check-patches.yml` | Daily (cron) | Clones upstream, applies patches, builds. Auto-commits if patches needed updating |
-| `docker-release.yml` | GitHub release | Builds + pushes multi-arch Docker image to `ethpandaops/erigone:<tag>` |
-| `docker-pr-build.yml` | PR with `build-image` label | Builds a test Docker image for the PR |
+| `check-patches.yml` | Daily (cron) | Checks all patch targets (main + tags), auto-commits if patches needed updating |
+| `docker-release.yml` | GitHub release | Builds + pushes multi-arch Docker images for all patch targets |
+| `docker-pr-build.yml` | PR with `build-image` label | Builds test Docker images for all patch targets |
 | `validate-patches.yml` | PR | Validates patch file structure (hunk counts, etc.) |
 
-When the daily CI detects that patches needed a 3-way merge to apply, it auto-commits the updated patches back to the overlay branch. If patches completely fail (upstream rewrote the same lines), CI fails and you'll need to fix the conflict manually (see [Fixing a patch conflict](#fixing-a-patch-conflict)).
+CI discovers all patch targets automatically from the `patches/` directory structure. Each directory containing a `base.patch` becomes a build target. When the daily CI detects that patches needed a 3-way merge, it auto-commits the updated patches. If patches completely fail, CI fails and you'll need to fix the conflict manually (see [Fixing a patch conflict](#fixing-a-patch-conflict)).
+
+Docker images are tagged with the upstream ref as a suffix (e.g., `erigone:v0.1.0-main`, `erigone:v0.1.0-v3.3.10`). The `main` variant also gets the unqualified `latest` tag.
 
 ## Requirements
 

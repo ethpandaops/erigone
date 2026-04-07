@@ -16,32 +16,13 @@ jobs:
   discover-patches:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.discover.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Discover patch files
-        id: set-matrix
-        run: |
-          # Find all base patch files and extract org/repo/ref info
-          # Extension patches (e.g. main-01-gas-fix.patch) are discovered by apply script
-          patches=$(find patches -name "*.patch" -type f | while read patch; do
-            # Extract org/repo/branch from path like patches/erigontech/erigon/main.patch
-            path_parts=$(echo "$patch" | sed 's|^patches/||; s|\.patch$||')
-            org=$(echo "$path_parts" | cut -d'/' -f1)
-            repo=$(echo "$path_parts" | cut -d'/' -f2)
-            branch=$(echo "$path_parts" | cut -d'/' -f3-)
-
-            # Skip extension patches (contain a hyphen-digit pattern like -01-)
-            if echo "$branch" | grep -qE '^.*-[0-9]+-'; then
-              continue
-            fi
-
-            echo "{\"org\":\"$org\",\"repo\":\"$repo\",\"branch\":\"$branch\"}"
-          done | jq -sc '.')
-
-          echo "Found patches: $patches"
-          echo "matrix={\"include\":$patches}" >> $GITHUB_OUTPUT
+      - name: Discover patch targets
+        id: discover
+        uses: ./.github/actions/discover-patches
 
   check-patch:
     needs: discover-patches
@@ -59,13 +40,13 @@ jobs:
           go-version: '1.25'
           cache: false
 
-      - name: Run erigone build for ${{ matrix.org }}/${{ matrix.repo }} ${{ matrix.branch }}
+      - name: Run erigone build for ${{ matrix.org }}/${{ matrix.repo }} ${{ matrix.ref }}
         id: build
         run: |
-          echo "Building ${{ matrix.org }}/${{ matrix.repo }} on branch ${{ matrix.branch }}"
+          echo "Building ${{ matrix.org }}/${{ matrix.repo }} on ref ${{ matrix.ref }}"
 
           # Run the build script in CI mode
-          ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.branch }}" --ci
+          ./scripts/erigone-build.sh -r "${{ matrix.org }}/${{ matrix.repo }}" -b "${{ matrix.ref }}" --ci
 
           # Check if patches were updated
           if git diff --quiet patches/; then
@@ -86,8 +67,8 @@ jobs:
         if: steps.build.outputs.patch_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: patches-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}
-          path: patches/${{ matrix.org }}/${{ matrix.repo }}/
+          name: patches-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.ref }}
+          path: patches/${{ matrix.org }}/${{ matrix.repo }}/${{ matrix.ref }}/
 
       - name: Save patch metadata
         if: steps.build.outputs.patch_changed == 'true'
@@ -96,16 +77,16 @@ jobs:
           echo "{
             \"org\": \"${{ matrix.org }}\",
             \"repo\": \"${{ matrix.repo }}\",
-            \"branch\": \"${{ matrix.branch }}\",
+            \"ref\": \"${{ matrix.ref }}\",
             \"commit_hash\": \"${{ steps.build.outputs.commit_hash }}\"
-          }" > patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}.json
+          }" > patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.ref }}.json
 
       - name: Upload patch metadata
         if: steps.build.outputs.patch_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: metadata-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}
-          path: patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.branch }}.json
+          name: metadata-${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.ref }}
+          path: patch-metadata/${{ matrix.org }}-${{ matrix.repo }}-${{ matrix.ref }}.json
 
   update-and-release:
     needs: check-patch
@@ -130,25 +111,30 @@ jobs:
           for artifact_dir in artifacts/patches-*; do
             if [ -d "$artifact_dir" ]; then
               echo "Processing $artifact_dir"
+
+              # Read metadata to get correct ref name
               artifact_name=$(basename "$artifact_dir")
-              org_repo_branch=${artifact_name#patches-}
-              org=$(echo "$org_repo_branch" | cut -d'-' -f1)
-              repo=$(echo "$org_repo_branch" | cut -d'-' -f2)
+              # Find matching metadata
+              metadata_dir="${artifact_dir/patches-/metadata-}"
+              metadata_dir="artifacts/$(basename "$metadata_dir")"
 
-              dest_dir="patches/$org/$repo"
-              mkdir -p "$dest_dir"
-              cp "$artifact_dir"/*.patch "$dest_dir/"
+              if [ -d "$metadata_dir" ]; then
+                for mf in "$metadata_dir"/*.json; do
+                  if [ -f "$mf" ]; then
+                    org=$(jq -r '.org' "$mf")
+                    repo=$(jq -r '.repo' "$mf")
+                    ref=$(jq -r '.ref' "$mf")
+                    commit_hash=$(jq -r '.commit_hash' "$mf")
 
-              PATCHES_UPDATED=true
+                    dest_dir="patches/$org/$repo/$ref"
+                    mkdir -p "$dest_dir"
+                    cp "$artifact_dir"/*.patch "$dest_dir/"
 
-              metadata_file="artifacts/metadata-$org_repo_branch/${org}-${repo}-*.json"
-              for mf in $metadata_file; do
-                if [ -f "$mf" ]; then
-                  commit_hash=$(jq -r '.commit_hash' "$mf")
-                  branch=$(jq -r '.branch' "$mf")
-                  RELEASE_NOTES="${RELEASE_NOTES}- Updated patches for ${org}/${repo} ${branch} (commit: ${commit_hash})\n"
-                fi
-              done
+                    PATCHES_UPDATED=true
+                    RELEASE_NOTES="${RELEASE_NOTES}- Updated patches for ${org}/${repo} ${ref} (commit: ${commit_hash})\n"
+                  fi
+                done
+              fi
             fi
           done
 
@@ -173,25 +159,29 @@ jobs:
       - name: Create release for each updated patch
         if: steps.process.outputs.patches_updated == 'true'
         run: |
-          for metadata_file in artifacts/metadata-*/*.json; do
-            if [ -f "$metadata_file" ]; then
-              org=$(jq -r '.org' "$metadata_file")
-              repo=$(jq -r '.repo' "$metadata_file")
-              branch=$(jq -r '.branch' "$metadata_file")
-              commit_hash=$(jq -r '.commit_hash' "$metadata_file")
+          for metadata_dir in artifacts/metadata-*; do
+            if [ -d "$metadata_dir" ]; then
+              for metadata_file in "$metadata_dir"/*.json; do
+                if [ -f "$metadata_file" ]; then
+                  org=$(jq -r '.org' "$metadata_file")
+                  repo=$(jq -r '.repo' "$metadata_file")
+                  ref=$(jq -r '.ref' "$metadata_file")
+                  commit_hash=$(jq -r '.commit_hash' "$metadata_file")
 
-              tag_name="${org}-${repo}-${branch}-${commit_hash}"
+                  tag_name="${org}-${repo}-${ref}-${commit_hash}"
 
-              release_body="Automated patch update for ${org}/${repo} on branch ${branch}
+                  release_body="Automated patch update for ${org}/${repo} on ref ${ref}
 
-              Built from upstream commit: ${commit_hash}
+                  Built from upstream commit: ${commit_hash}
 
-              This release contains the updated patch files."
+                  This release contains the updated patch files."
 
-              gh release create "$tag_name" \
-                --title "Patch Update: ${org}/${repo} ${branch} (${commit_hash})" \
-                --notes "$release_body" \
-                patches/${org}/${repo}/*.patch || echo "Release $tag_name may already exist"
+                  gh release create "$tag_name" \
+                    --title "Patch Update: ${org}/${repo} ${ref} (${commit_hash})" \
+                    --notes "$release_body" \
+                    patches/${org}/${repo}/${ref}/*.patch || echo "Release $tag_name may already exist"
+                fi
+              done
             fi
           done
         env:
