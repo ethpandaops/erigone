@@ -1,10 +1,10 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index c397db2..5ce29b3 100644
+index 4e22411..9c46535 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
-@@ -1137,6 +1137,12 @@ var (
- 		Usage: "Port for MCP RPC server",
- 		Value: 8553,
+@@ -1149,6 +1149,12 @@ var (
+ 		Name:  "erigondb.domain.steps-in-frozen-file",
+ 		Usage: `Override erigondb.toml "steps_in_frozen_file" for the domain merge cap only (history/inverted-index merges are unaffected). Pass a positive integer to set an explicit cap, or "Inf" to leave the domain merge unbounded. Default: unset, meaning the domain uses the same cap as determined by erigondb.toml.`,
  	}
 +	// Xatu: Xatu execution processor config
 +	XatuConfigFlag = cli.StringFlag{
@@ -15,7 +15,7 @@ index c397db2..5ce29b3 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -1922,6 +1928,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+@@ -1948,6 +1954,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
@@ -23,8 +23,8 @@ index c397db2..5ce29b3 100644
 +	cfg.XatuConfig = ctx.String(XatuConfigFlag.Name)
 +
  	if ctx.Bool(ExperimentalConcurrentCommitmentFlag.Name) {
- 		// cfg.ExperimentalConcurrentCommitment = true
- 		statecfg.ExperimentalConcurrentCommitment = true
+ 		cfg.ExperimentalConcurrentCommitment = true
+ 	}
 diff --git a/common/math/integer.go b/common/math/integer.go
 index dc353bf..52a46f1 100644
 --- a/common/math/integer.go
@@ -43,10 +43,10 @@ index dc353bf..52a46f1 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/txn_executor.go b/execution/protocol/txn_executor.go
-index aecee19..1236918 100644
+index 3dd194c..ded6619 100644
 --- a/execution/protocol/txn_executor.go
 +++ b/execution/protocol/txn_executor.go
-@@ -505,6 +505,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
+@@ -509,6 +509,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  	// Check clause 1: compute intrinsic gas before preCheck so the EIP-7825
  	// cap can be checked there (before buyGas) for all fork variants.
  	intrinsicGasResult, overflow := st.calcIntrinsicGas(contractCreation, auths, accessTuples)
@@ -64,7 +64,7 @@ index aecee19..1236918 100644
  	if overflow {
  		return nil, ErrGasUintOverflow
  	}
-@@ -514,10 +525,6 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
+@@ -518,10 +529,6 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  		return nil, err
  	}
  
@@ -76,7 +76,7 @@ index aecee19..1236918 100644
  		// Increment the nonce for the next transaction
  		nonce, err := st.state.GetNonce(sender)
 diff --git a/execution/vm/contracts.go b/execution/vm/contracts.go
-index 6287750..857d05f 100644
+index 33eafb3..d8ee36f 100644
 --- a/execution/vm/contracts.go
 +++ b/execution/vm/contracts.go
 @@ -299,9 +299,12 @@ func ActivePrecompiles(rules *chain.Rules) []accounts.Address {
@@ -219,7 +219,7 @@ index 2ba00fe..2523c10 100644
  }
  
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
-index fb9db73..af29d27 100644
+index eb6e0e3..00e04af 100644
 --- a/execution/vm/evm.go
 +++ b/execution/vm/evm.go
 @@ -95,6 +95,10 @@ type EVM struct {
@@ -233,7 +233,7 @@ index fb9db73..af29d27 100644
  	stateGasConsumed   uint64 // total state gas charged during tx execution (restored on depth>0 revert, kept on depth-0)
  	regularGasConsumed uint64 // total regular gas charged during tx execution (for block-level accounting)
  	revertedSpillGas   uint64 // state gas that spilled to regular and was restored on depth-0 revert
-@@ -342,7 +346,7 @@ func (evm *EVM) call(typ OpCode, caller accounts.Address, callerAddress accounts
+@@ -368,7 +372,7 @@ func (evm *EVM) call(typ OpCode, caller accounts.Address, callerAddress accounts
  	// It is allowed to call precompiles, even via delegatecall
  	if isPrecompile {
  		preGas := gas.Regular
@@ -242,7 +242,7 @@ index fb9db73..af29d27 100644
  		if evm.chainRules.IsAmsterdam {
  			evm.regularGasConsumed += preGas - gas.Regular
  		}
-@@ -608,7 +612,7 @@ func (evm *EVM) create(caller accounts.Address, codeAndHash *codeAndHash, gasRem
+@@ -636,7 +640,7 @@ func (evm *EVM) create(caller accounts.Address, codeAndHash *codeAndHash, gasRem
  				// HASH_COST(L) = 6*ceil(L/32); the state component (cpsb*L) is charged above.
  				regularGas = params.Keccak256WordGas * ToWordSize(uint64(len(ret)))
  			} else {
@@ -263,7 +263,7 @@ index 97ff0ec..0636e08 100644
 +	return memoryGasCost(&EVM{}, callContext, newMemSize)
  }
 diff --git a/execution/vm/gas_table.go b/execution/vm/gas_table.go
-index b1083f8..0328798 100644
+index 78defa8..3d037da 100644
 --- a/execution/vm/gas_table.go
 +++ b/execution/vm/gas_table.go
 @@ -33,7 +33,7 @@ import (
@@ -424,43 +424,43 @@ index b1083f8..0328798 100644
  	gas.Regular, overflow = math.SafeAdd(gas.Regular, wordGas)
  	if overflow {
  		return mdgas.MdGas{}, ErrGasUintOverflow
-@@ -364,7 +364,7 @@ func gasCreate2Eip3860(evm *EVM, callContext *CallContext, availableGas mdgas.Md
- // GAS_CREATE is a pre-state cost that must always be charged, so the initcode
- // size is capped (not rejected) here; the actual check happens in opCreate.
+@@ -363,7 +363,7 @@ func gasCreate2Eip3860(evm *EVM, callContext *CallContext, availableGas mdgas.Md
+ // gasCreateEip8037 is the dynamic gas function for CREATE under EIP-8037.
+ // State gas is charged in execCreate after the static-context check (per execution-specs#2608).
  func gasCreateEip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdGas, memorySize uint64) (gas mdgas.MdGas, err error) {
 -	gas.Regular, err = memoryGasCost(callContext, memorySize)
 +	gas.Regular, err = memoryGasCost(evm, callContext, memorySize)
  	if err != nil {
  		return mdgas.MdGas{}, err
  	}
-@@ -373,7 +373,7 @@ func gasCreateEip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
- 		return mdgas.MdGas{}, ErrGasUintOverflow
+@@ -376,7 +376,7 @@ func gasCreateEip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
  	}
- 	wordSize := min(size, params.MaxInitCodeSizeAmsterdam)
--	wordGas := params.InitCodeWordGas * ToWordSize(wordSize)
-+	wordGas := evm.GasSchedule.GetOr(GasKeyInitCodeWord, params.InitCodeWordGas) * ToWordSize(wordSize)
+ 	numWords := ToWordSize(size)
+ 	// Since size <= params.MaxInitCodeSizeAmsterdam, this multiplication cannot overflow
+-	wordGas := params.InitCodeWordGas * numWords
++	wordGas := evm.GasSchedule.GetOr(GasKeyInitCodeWord, params.InitCodeWordGas) * numWords
  	gas.Regular, overflow = math.SafeAdd(gas.Regular, wordGas)
  	if overflow {
  		return mdgas.MdGas{}, ErrGasUintOverflow
-@@ -384,7 +384,7 @@ func gasCreateEip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
- 
+@@ -387,7 +387,7 @@ func gasCreateEip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
  // gasCreate2Eip8037 is the dynamic gas function for CREATE2 under EIP-8037.
+ // State gas is charged in execCreate after the static-context check (per execution-specs#2608).
  func gasCreate2Eip8037(evm *EVM, callContext *CallContext, availableGas mdgas.MdGas, memorySize uint64) (gas mdgas.MdGas, err error) {
 -	gas.Regular, err = memoryGasCost(callContext, memorySize)
 +	gas.Regular, err = memoryGasCost(evm, callContext, memorySize)
  	if err != nil {
  		return mdgas.MdGas{}, err
  	}
-@@ -393,7 +393,7 @@ func gasCreate2Eip8037(evm *EVM, callContext *CallContext, availableGas mdgas.Md
- 		return mdgas.MdGas{}, ErrGasUintOverflow
+@@ -400,7 +400,7 @@ func gasCreate2Eip8037(evm *EVM, callContext *CallContext, availableGas mdgas.Md
  	}
- 	wordSize := min(size, params.MaxInitCodeSizeAmsterdam)
--	wordGas := (params.InitCodeWordGas + params.Keccak256WordGas) * ToWordSize(wordSize)
-+	wordGas := (evm.GasSchedule.GetOr(GasKeyInitCodeWord, params.InitCodeWordGas) + evm.GasSchedule.GetOr(GasKeyKeccak256Word, params.Keccak256WordGas)) * ToWordSize(wordSize)
+ 	numWords := ToWordSize(size)
+ 	// Since size <= params.MaxInitCodeSizeAmsterdam, this multiplication cannot overflow
+-	wordGas := (params.InitCodeWordGas + params.Keccak256WordGas) * numWords
++	wordGas := (evm.GasSchedule.GetOr(GasKeyInitCodeWord, params.InitCodeWordGas) + evm.GasSchedule.GetOr(GasKeyKeccak256Word, params.Keccak256WordGas)) * numWords
  	gas.Regular, overflow = math.SafeAdd(gas.Regular, wordGas)
  	if overflow {
  		return mdgas.MdGas{}, ErrGasUintOverflow
-@@ -402,11 +402,11 @@ func gasCreate2Eip8037(evm *EVM, callContext *CallContext, availableGas mdgas.Md
+@@ -408,11 +408,11 @@ func gasCreate2Eip8037(evm *EVM, callContext *CallContext, availableGas mdgas.Md
  	return gas, nil
  }
  
@@ -474,7 +474,7 @@ index b1083f8..0328798 100644
  		overflow bool
  	)
  	if gas, overflow = math.SafeAdd(gas, params.ExpGas); overflow {
-@@ -415,11 +415,11 @@ func gasExpFrontier(_ *EVM, callContext *CallContext, availableGas mdgas.MdGas,
+@@ -421,11 +421,11 @@ func gasExpFrontier(_ *EVM, callContext *CallContext, availableGas mdgas.MdGas,
  	return mdgas.MdGas{Regular: gas}, nil
  }
  
@@ -488,7 +488,7 @@ index b1083f8..0328798 100644
  		overflow bool
  	)
  	if gas, overflow = math.SafeAdd(gas, params.ExpGas); overflow {
-@@ -438,9 +438,9 @@ func statelessGasCall(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
+@@ -444,9 +444,9 @@ func statelessGasCall(evm *EVM, callContext *CallContext, availableGas mdgas.MdG
  
  	transfersValue := !callContext.Stack.Back(2).IsZero()
  	if transfersValue {
@@ -500,7 +500,7 @@ index b1083f8..0328798 100644
  	if err != nil {
  		return mdgas.MdGas{}, transfersValue, err
  	}
-@@ -508,7 +508,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas, availa
+@@ -514,7 +514,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas, availa
  			if rules.IsAmsterdam {
  				stateGas = params.StateBytesNewAccount * evm.Context.CostPerStateByte
  			} else {
@@ -509,7 +509,7 @@ index b1083f8..0328798 100644
  			}
  		}
  	} else {
-@@ -521,7 +521,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas, availa
+@@ -527,7 +527,7 @@ func statefulGasCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas, availa
  		if !exists {
  			// note this doesn't need updating for amsterdam since
  			// this branch is only for paths before spurious dragon
@@ -518,7 +518,7 @@ index b1083f8..0328798 100644
  		}
  	}
  
-@@ -564,7 +564,7 @@ func statefulGasCallCode(evm *EVM, callContext *CallContext, gas mdgas.MdGas, av
+@@ -570,7 +570,7 @@ func statefulGasCallCode(evm *EVM, callContext *CallContext, gas mdgas.MdGas, av
  }
  
  func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas mdgas.MdGas, memorySize uint64, withCallGasCalc bool) (mdgas.MdGas, bool, error) {
@@ -527,7 +527,7 @@ index b1083f8..0328798 100644
  	if err != nil {
  		return mdgas.MdGas{}, false, err
  	}
-@@ -573,7 +573,7 @@ func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas mdgas
+@@ -579,7 +579,7 @@ func statelessGasCallCode(evm *EVM, callContext *CallContext, availableGas mdgas
  		overflow bool
  	)
  	if !callContext.Stack.Back(2).IsZero() {
@@ -536,7 +536,7 @@ index b1083f8..0328798 100644
  	}
  
  	if gas.Regular, overflow = math.SafeAdd(gas.Regular, memoryGas); overflow {
-@@ -617,7 +617,7 @@ func statefulGasDelegateCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas
+@@ -623,7 +623,7 @@ func statefulGasDelegateCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas
  }
  
  func statelessGasDelegateCall(evm *EVM, callContext *CallContext, availableGas mdgas.MdGas, memorySize uint64, withCallGasCalc bool) (mdgas.MdGas, bool, error) {
@@ -545,7 +545,7 @@ index b1083f8..0328798 100644
  	if err != nil {
  		return mdgas.MdGas{}, false, err
  	}
-@@ -668,7 +668,7 @@ func statefulGasStaticCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas,
+@@ -674,7 +674,7 @@ func statefulGasStaticCall(evm *EVM, callContext *CallContext, gas mdgas.MdGas,
  }
  
  func statelessGasStaticCall(evm *EVM, callContext *CallContext, availableGas mdgas.MdGas, memorySize uint64, withCallGasCalc bool) (mdgas.MdGas, bool, error) {
@@ -554,7 +554,7 @@ index b1083f8..0328798 100644
  	if err != nil {
  		return mdgas.MdGas{}, false, err
  	}
-@@ -725,7 +725,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas mdgas.MdGa
+@@ -731,7 +731,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas mdgas.MdGa
  				return mdgas.MdGas{}, err
  			}
  			if empty && !balance.IsZero() {
@@ -563,7 +563,7 @@ index b1083f8..0328798 100644
  			}
  		} else {
  			exist, err := evm.IntraBlockState().Exist(address)
-@@ -735,7 +735,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas mdgas.MdGa
+@@ -741,7 +741,7 @@ func gasSelfdestruct(evm *EVM, callContext *CallContext, availableGas mdgas.MdGa
  			// Exist() reads account state for gas calculation — record for BAL.
  			evm.IntraBlockState().MarkAddressAccess(address, false)
  			if !exist {
@@ -573,7 +573,7 @@ index b1083f8..0328798 100644
  		}
  	}
 diff --git a/execution/vm/interpreter.go b/execution/vm/interpreter.go
-index d6bf20a..351c567 100644
+index 0f65a98..55b071c 100644
 --- a/execution/vm/interpreter.go
 +++ b/execution/vm/interpreter.go
 @@ -48,6 +48,10 @@ type Config struct {
@@ -587,7 +587,7 @@ index d6bf20a..351c567 100644
  }
  
  func (vmConfig *Config) HasEip3860(rules *chain.Rules) bool {
-@@ -246,7 +250,18 @@ func copyJumpTable(jt *JumpTable) *JumpTable {
+@@ -295,7 +299,18 @@ func copyJumpTable(jt *JumpTable) *JumpTable {
  	return &copy
  }
  
@@ -629,7 +629,7 @@ index daae81f..e704a18 100644
  	frontierInstructionSet         = newFrontierInstructionSet()
  	homesteadInstructionSet        = newHomesteadInstructionSet()
 diff --git a/execution/vm/operations_acl.go b/execution/vm/operations_acl.go
-index 53c57d4..65ef5e5 100644
+index f56ccda..02663a6 100644
 --- a/execution/vm/operations_acl.go
 +++ b/execution/vm/operations_acl.go
 @@ -54,7 +54,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
@@ -649,8 +649,8 @@ index 53c57d4..65ef5e5 100644
 +			return mdgas.MdGas{Regular: cost + evm.GasSchedule.GetOr(GasKeySloadWarm, params.WarmStorageReadCostEIP2929)}, nil // SLOAD_GAS
  		}
  
- 		slotCommited := accounts.InternKey(x.Bytes32())
-@@ -77,7 +77,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+ 		var original, _ = evm.IntraBlockState().GetCommittedState(callContext.Address(), slot)
+@@ -76,7 +76,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  				if rules.IsAmsterdam {
  					return mdgas.MdGas{Regular: cost + params.SstoreSetGasEIP8037, State: 32 * evm.Context.CostPerStateByte}, nil
  				} else {
@@ -659,7 +659,7 @@ index 53c57d4..65ef5e5 100644
  				}
  			}
  			if value.IsZero() { // delete slot (2.1.2b)
-@@ -85,7 +85,8 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+@@ -84,7 +84,8 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  			}
  			// EIP-2200 original clause:
  			//		return params.SstoreResetGasEIP2200, nil // write existing slot (2.1.2)
@@ -669,7 +669,7 @@ index 53c57d4..65ef5e5 100644
  		}
  		if !original.IsZero() {
  			if current.IsZero() { // recreate slot (2.2.1.1)
-@@ -102,7 +103,8 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+@@ -101,7 +102,8 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  					evm.IntraBlockState().AddRefund(params.SstoreSetGasEIP8037 - params.WarmStorageReadCostEIP2929)
  					evm.IntraBlockState().AddStateRefund(32 * evm.Context.CostPerStateByte)
  				} else {
@@ -679,7 +679,7 @@ index 53c57d4..65ef5e5 100644
  				}
  			} else { // reset to original existing slot (2.2.2.2)
  				// EIP 2200 Original clause:
-@@ -110,12 +112,13 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
+@@ -109,12 +111,13 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
  				// - SSTORE_RESET_GAS redefined as (5000 - COLD_SLOAD_COST)
  				// - SLOAD_GAS redefined as WARM_STORAGE_READ_COST
  				// Final: (5000 - COLD_SLOAD_COST) - WARM_STORAGE_READ_COST
@@ -695,10 +695,10 @@ index 53c57d4..65ef5e5 100644
  	}
  }
  
-@@ -129,9 +132,9 @@ func gasSLoadEIP2929(evm *EVM, callContext *CallContext, scopeGas mdgas.MdGas, m
+@@ -127,9 +130,9 @@ func gasSLoadEIP2929(evm *EVM, callContext *CallContext, scopeGas mdgas.MdGas, m
  	// If the caller cannot afford the cost, this change will be rolled back
  	// If he does afford it, we can skip checking the same thing later on, during execution
- 	if _, slotMod := evm.IntraBlockState().AddSlotToAccessList(callContext.Address(), accounts.InternKey(loc.Bytes32())); slotMod {
+ 	if _, slotMod := evm.IntraBlockState().AddSlotToAccessList(callContext.Address(), callContext.peekStorageKey()); slotMod {
 -		return mdgas.MdGas{Regular: params.ColdSloadCostEIP2929}, nil
 +		return mdgas.MdGas{Regular: evm.GasSchedule.GetOr(GasKeySloadCold, params.ColdSloadCostEIP2929)}, nil
  	}
@@ -707,7 +707,7 @@ index 53c57d4..65ef5e5 100644
  }
  
  // gasExtCodeCopyEIP2929 implements extcodecopy according to EIP-2929
-@@ -150,7 +153,7 @@ func gasExtCodeCopyEIP2929(evm *EVM, callContext *CallContext, scopeGas mdgas.Md
+@@ -148,7 +151,7 @@ func gasExtCodeCopyEIP2929(evm *EVM, callContext *CallContext, scopeGas mdgas.Md
  	if evm.IntraBlockState().AddAddressToAccessList(addr) {
  		var overflow bool
  		// We charge (cold-warm), since 'warm' is already charged as constantGas
@@ -716,7 +716,7 @@ index 53c57d4..65ef5e5 100644
  			return mdgas.MdGas{}, ErrGasUintOverflow
  		}
  		return gas, nil
-@@ -170,7 +173,7 @@ func gasEip2929AccountCheck(evm *EVM, callContext *CallContext, scopeGas mdgas.M
+@@ -168,7 +171,7 @@ func gasEip2929AccountCheck(evm *EVM, callContext *CallContext, scopeGas mdgas.M
  	// If the caller cannot afford the cost, this change will be rolled back
  	if evm.IntraBlockState().AddAddressToAccessList(addr) {
  		// The warm storage read cost is already charged as constantGas
@@ -725,7 +725,7 @@ index 53c57d4..65ef5e5 100644
  	}
  	return mdgas.MdGas{}, nil
  }
-@@ -180,7 +183,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
+@@ -178,7 +181,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
  		addr := accounts.InternAddress(callContext.Stack.Back(1).Bytes20())
  		// The WarmStorageReadCostEIP2929 (100) is already deducted in the form of a constant cost, so
  		// the cost to charge for cold access, if any, is Cold - Warm
@@ -734,7 +734,7 @@ index 53c57d4..65ef5e5 100644
  		warmAccess := evm.IntraBlockState().AddressInAccessList(addr)
  		if !warmAccess {
  			// Charge the remaining difference here already, to correctly calculate available
-@@ -250,7 +253,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
+@@ -248,7 +251,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
  		}
  		// If the caller cannot afford the cost, this change will be rolled back
  		if !evm.IntraBlockState().AddressInAccessList(address) {
@@ -743,7 +743,7 @@ index 53c57d4..65ef5e5 100644
  			if _, ok := useGas(scopeGas.Regular, gas.Regular, evm.Config().Tracer, tracing.GasChangeCallStorageColdAccess); !ok {
  				return mdgas.MdGas{}, ErrOutOfGas
  			}
-@@ -288,7 +291,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
+@@ -293,7 +296,7 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
  			if evm.chainRules.IsAmsterdam {
  				gas.State = params.StateBytesNewAccount * evm.Context.CostPerStateByte
  			} else {
@@ -752,7 +752,7 @@ index 53c57d4..65ef5e5 100644
  			}
  		}
  
-@@ -325,7 +328,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -330,7 +333,7 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		if !evm.intraBlockState.AddressInAccessList(addr) {
  			// The WarmStorageReadCostEIP2929 (100) is already deducted in the form of a constant cost, so
  			// the cost to charge for cold access, if any, is Cold - Warm
@@ -761,7 +761,7 @@ index 53c57d4..65ef5e5 100644
  			// Charge the remaining difference here already, to correctly calculate available
  			// gas for call
  			if availableGas.Regular < accessGas {
-@@ -384,9 +387,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
+@@ -389,9 +392,9 @@ func makeCallVariantGasCallEIP7702(statelessCalculator statelessGasFunc, statefu
  		var delegationGas uint64
  		if ok {
  			if !evm.intraBlockState.AddressInAccessList(dd) {
@@ -774,24 +774,25 @@ index 53c57d4..65ef5e5 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index f5583ed..02e8229 100644
+index caf1979..ecf6674 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
-@@ -256,4 +256,6 @@ var DefaultFlags = []cli.Flag{
- 	&utils.MCPDisableFlag,
- 	&utils.MCPAddrFlag,
+@@ -259,4 +259,6 @@ var DefaultFlags = []cli.Flag{
  	&utils.MCPPortFlag,
+ 
+ 	&utils.ErigondbDomainStepsInFrozenFileFlag,
 +	// Xatu: Xatu execution processor flag
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 3d86947..15f5155 100644
+index b3d16b3..375d925 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1124,8 +1124,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
- 		}
+@@ -1166,8 +1166,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+ 		entry := engineapi.NewTestingRPCEntry(s.engineBackendRPC, s.logger, s.chainDB)
+ 		testingEntry = &entry
  	}
- 
++
 +	// Xatu: Initialize Xatu service if configured (requires -tags embedded)
 +	var xatuAPIs []rpc.API
 +	if config.XatuConfig != "" {
@@ -802,7 +803,7 @@ index 3d86947..15f5155 100644
 +		}
 +	}
 +
- 	s.apiList = jsonrpc.APIList(chainKv, s.ethRpcClient, s.txPoolRpcClient, s.miningRpcClient, s.rpcFilters, s.rpcDaemonStateCache, blockReader, &httpRpcCfg, s.engine, s.logger, s.polygonBridge, s.heimdallService)
+ 	s.apiList = jsonrpc.APIList(chainKv, s.ethRpcClient, s.txPoolRpcClient, s.miningRpcClient, s.rpcFilters, s.rpcDaemonStateCache, blockReader, &httpRpcCfg, s.engine, s.logger, s.polygonBridge, s.heimdallService, testingEntry)
  
 +	// Add Xatu simulation APIs if service is available
 +	if len(xatuAPIs) > 0 {
@@ -813,10 +814,10 @@ index 3d86947..15f5155 100644
  		err := rpcdaemoncli.StartRpcServer(ctx, &httpRpcCfg, s.apiList, s.logger)
  		if err != nil && !errors.Is(err, context.Canceled) {
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
-index 4626556..8a25c57 100644
+index 0ed826a..f976e5e 100644
 --- a/node/ethconfig/config.go
 +++ b/node/ethconfig/config.go
-@@ -244,6 +244,8 @@ type Config struct {
+@@ -246,6 +246,8 @@ type Config struct {
  
  	// Ethstats service
  	Ethstats string
