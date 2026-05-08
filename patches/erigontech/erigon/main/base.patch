@@ -1,10 +1,10 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index b4ef683..d2dc8b9 100644
+index 2e68d98..75ec93f 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
-@@ -1149,6 +1149,12 @@ var (
- 		Name:  "erigondb.domain.steps-in-frozen-file",
- 		Usage: `Override erigondb.toml "steps_in_frozen_file" for the domain merge cap only (history/inverted-index merges are unaffected). Pass a positive integer to set an explicit cap, or "Inf" to leave the domain merge unbounded. Default: unset, meaning the domain uses the same cap as determined by erigondb.toml.`,
+@@ -1185,6 +1185,12 @@ var (
+ 		Usage: "Suppress background state-aggregator (Domain/Hist/II + forkable) file build/merge and E2 block-snapshot retirement goroutines so execution is not perturbed by housekeeping work (legacy env var: NO_BACKGROUND_E3_BUILD=true). Diagnostic / focused-performance-testing use only — NOT an operational setting.",
+ 		Value: false,
  	}
 +	// Xatu: Xatu execution processor config
 +	XatuConfigFlag = cli.StringFlag{
@@ -15,7 +15,7 @@ index b4ef683..d2dc8b9 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -1948,6 +1954,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+@@ -1984,6 +1990,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
@@ -43,10 +43,10 @@ index dc353bf..52a46f1 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/txn_executor.go b/execution/protocol/txn_executor.go
-index ca73c3b..1d387bf 100644
+index 850db94..87983cf 100644
 --- a/execution/protocol/txn_executor.go
 +++ b/execution/protocol/txn_executor.go
-@@ -509,6 +509,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
+@@ -510,6 +510,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  	// Check clause 1: compute intrinsic gas before preCheck so the EIP-7825
  	// cap can be checked there (before buyGas) for all fork variants.
  	intrinsicGasResult, overflow := st.calcIntrinsicGas(contractCreation, auths, accessTuples)
@@ -64,7 +64,7 @@ index ca73c3b..1d387bf 100644
  	if overflow {
  		return nil, ErrGasUintOverflow
  	}
-@@ -518,10 +529,6 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
+@@ -519,10 +530,6 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
  		return nil, err
  	}
  
@@ -219,10 +219,10 @@ index 2ba00fe..2523c10 100644
  }
  
 diff --git a/execution/vm/evm.go b/execution/vm/evm.go
-index eb6e0e3..00e04af 100644
+index b5e03c1..caaf128 100644
 --- a/execution/vm/evm.go
 +++ b/execution/vm/evm.go
-@@ -95,6 +95,10 @@ type EVM struct {
+@@ -94,6 +94,10 @@ type EVM struct {
  	readOnly   bool   // Whether to throw on stateful modifications
  	returnData []byte // Last CALL's return data for subsequent reuse
  
@@ -233,7 +233,7 @@ index eb6e0e3..00e04af 100644
  	stateGasConsumed   uint64 // total state gas charged during tx execution (restored on depth>0 revert, kept on depth-0)
  	regularGasConsumed uint64 // total regular gas charged during tx execution (for block-level accounting)
  	revertedSpillGas   uint64 // state gas that spilled to regular and was restored on depth-0 revert
-@@ -368,7 +372,7 @@ func (evm *EVM) call(typ OpCode, caller accounts.Address, callerAddress accounts
+@@ -375,7 +379,7 @@ func (evm *EVM) call(typ OpCode, caller accounts.Address, callerAddress accounts
  	// It is allowed to call precompiles, even via delegatecall
  	if isPrecompile {
  		preGas := gas.Regular
@@ -242,7 +242,7 @@ index eb6e0e3..00e04af 100644
  		if evm.chainRules.IsAmsterdam {
  			evm.regularGasConsumed += preGas - gas.Regular
  		}
-@@ -636,7 +640,7 @@ func (evm *EVM) create(caller accounts.Address, codeAndHash *codeAndHash, gasRem
+@@ -643,7 +647,7 @@ func (evm *EVM) create(caller accounts.Address, codeAndHash *codeAndHash, gasRem
  				// HASH_COST(L) = 6*ceil(L/32); the state component (cpsb*L) is charged above.
  				regularGas = params.Keccak256WordGas * ToWordSize(uint64(len(ret)))
  			} else {
@@ -573,7 +573,7 @@ index 78defa8..3d037da 100644
  		}
  	}
 diff --git a/execution/vm/interpreter.go b/execution/vm/interpreter.go
-index 0f65a98..55b071c 100644
+index 159b4e2..6cf873e 100644
 --- a/execution/vm/interpreter.go
 +++ b/execution/vm/interpreter.go
 @@ -48,6 +48,10 @@ type Config struct {
@@ -774,10 +774,10 @@ index f56ccda..02663a6 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index 02ec0c6..cea2dde 100644
+index d0e5be7..a4a832a 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
-@@ -259,4 +259,6 @@ var DefaultFlags = []cli.Flag{
+@@ -266,4 +266,6 @@ var DefaultFlags = []cli.Flag{
  	&utils.MCPPortFlag,
  
  	&utils.ErigondbDomainStepsInFrozenFileFlag,
@@ -785,10 +785,10 @@ index 02ec0c6..cea2dde 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 883b274..b25ed29 100644
+index e3c7dd2..40a07b1 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1164,8 +1164,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+@@ -1184,8 +1184,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
  		entry := engineapi.NewTestingRPCEntry(s.engineBackendRPC, s.logger, s.chainDB)
  		testingEntry = &entry
  	}
