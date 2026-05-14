@@ -1,8 +1,8 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 6d24783..5f8746f 100644
+index 536d1c9..b33ddba 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
-@@ -1185,6 +1185,12 @@ var (
+@@ -1190,6 +1190,12 @@ var (
  		Usage: "Suppress background state-aggregator (Domain/Hist/II + forkable) file build/merge and E2 block-snapshot retirement goroutines so execution is not perturbed by housekeeping work (legacy env var: NO_BACKGROUND_E3_BUILD=true). Diagnostic / focused-performance-testing use only — NOT an operational setting.",
  		Value: false,
  	}
@@ -15,7 +15,7 @@ index 6d24783..5f8746f 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -1984,6 +1990,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+@@ -1990,6 +1996,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
@@ -43,7 +43,7 @@ index dc353bf..52a46f1 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/txn_executor.go b/execution/protocol/txn_executor.go
-index 6f38d18..f602f9d 100644
+index 30a0a51..70b4981 100644
 --- a/execution/protocol/txn_executor.go
 +++ b/execution/protocol/txn_executor.go
 @@ -510,6 +510,17 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
@@ -774,10 +774,10 @@ index f56ccda..02663a6 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index d0e5be7..a4a832a 100644
+index 46c9145..014eba7 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
-@@ -266,4 +266,6 @@ var DefaultFlags = []cli.Flag{
+@@ -267,4 +267,6 @@ var DefaultFlags = []cli.Flag{
  	&utils.MCPPortFlag,
  
  	&utils.ErigondbDomainStepsInFrozenFileFlag,
