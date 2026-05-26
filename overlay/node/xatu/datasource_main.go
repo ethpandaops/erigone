@@ -374,7 +374,7 @@ func (s *Service) DebugTraceTransaction(
 // ChainID returns the chain ID.
 func (s *Service) ChainID() int64 {
 	if s.chainConfig.ChainID != nil {
-		return s.chainConfig.ChainID.Int64()
+		return s.chainConfig.ChainID.ToBig().Int64()
 	}
 
 	return 1
