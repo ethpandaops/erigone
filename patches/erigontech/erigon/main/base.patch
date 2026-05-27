@@ -774,10 +774,10 @@ index d7eb2e8..6cdc0d2 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index e3dedab..cad556b 100644
+index 938cacf..ad5ec61 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
-@@ -266,4 +266,6 @@ var DefaultFlags = []cli.Flag{
+@@ -267,4 +267,6 @@ var DefaultFlags = []cli.Flag{
  	&utils.MCPPortFlag,
  
  	&utils.ErigondbDomainStepsInFrozenFileFlag,
@@ -785,10 +785,10 @@ index e3dedab..cad556b 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index 53bac78..3239940 100644
+index 2deeca5..67ff111 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1203,8 +1203,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+@@ -1204,8 +1204,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
  		entry := engineapi.NewTestingRPCEntry(s.engineBackendRPC, s.logger, s.chainDB)
  		testingEntry = &entry
  	}
