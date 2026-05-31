@@ -785,10 +785,10 @@ index 938cacf..ad5ec61 100644
 +	&utils.XatuConfigFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index fe6bd04..795d0ea 100644
+index 32cc8f6..3efdcfb 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1204,8 +1204,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
+@@ -1156,8 +1156,24 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
  		entry := engineapi.NewTestingRPCEntry(s.engineBackendRPC, s.logger, s.chainDB)
  		testingEntry = &entry
  	}
