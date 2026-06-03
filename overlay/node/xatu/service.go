@@ -43,6 +43,7 @@ import (
 	"github.com/erigontech/erigon/execution/chain"
 	"github.com/erigontech/erigon/execution/protocol/rules"
 	"github.com/erigontech/erigon/node"
+	"github.com/erigontech/erigon/rpc/jsonrpc/receipts"
 )
 
 // Config holds Xatu service configuration.
@@ -60,6 +61,12 @@ type Service struct {
 	blockReader services.FullBlockReader
 	chainConfig *chain.Config
 	engine      rules.EngineReader
+
+	// receiptsGen regenerates receipts on an RCache-domain miss (the same path
+	// the eth_getBlockReceipts RPC uses). Lazily initialised via receiptsGenOnce
+	// by the version-specific datasource (receiptsGenerator()).
+	receiptsGen     *receipts.Generator
+	receiptsGenOnce sync.Once
 
 	// dbChainConfig is the chain config read from the database, which may differ
 	// from the in-memory chainConfig if the DB was updated after node init (e.g.,
