@@ -38,6 +38,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/erigontech/erigon/common/log/v3"
+	"github.com/erigontech/erigon/db/datadir"
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/db/services"
 	"github.com/erigontech/erigon/execution/chain"
@@ -61,6 +62,7 @@ type Service struct {
 	blockReader services.FullBlockReader
 	chainConfig *chain.Config
 	engine      rules.EngineReader
+	dirs        datadir.Dirs
 
 	// receiptsGen regenerates receipts on an RCache-domain miss (the same path
 	// the eth_getBlockReceipts RPC uses). Lazily initialised via receiptsGenOnce
@@ -106,6 +108,7 @@ func New(
 		blockReader: blockReader,
 		chainConfig: chainConfig,
 		engine:      engine,
+		dirs:        n.Config().Dirs,
 		log:         logger.New("service", "xatu"),
 	}
 
