@@ -1,8 +1,8 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index d8a3941..a0e2ca3 100644
+index 9d966fb..5bbb63b 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
-@@ -1189,6 +1189,12 @@ var (
+@@ -1179,6 +1179,12 @@ var (
  		Usage: "Suppress background state-aggregator (Domain/Hist/II + forkable) file build/merge and E2 block-snapshot retirement goroutines so execution is not perturbed by housekeeping work (legacy env var: NO_BACKGROUND_E3_BUILD=true). Diagnostic / focused-performance-testing use only — NOT an operational setting.",
  		Value: false,
  	}
@@ -15,7 +15,7 @@ index d8a3941..a0e2ca3 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -1968,6 +1974,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
+@@ -1958,6 +1964,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
