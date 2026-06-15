@@ -814,7 +814,7 @@ index 52ec8f6..361bbc2 100644
  		err := rpcdaemoncli.StartRpcServer(ctx, &httpRpcCfg, s.apiList, s.logger)
  		if err != nil && !errors.Is(err, context.Canceled) {
 diff --git a/node/ethconfig/config.go b/node/ethconfig/config.go
-index 608d855..dcff20d 100644
+index bdd6de1..8422a6a 100644
 --- a/node/ethconfig/config.go
 +++ b/node/ethconfig/config.go
 @@ -251,6 +251,8 @@ type Config struct {
