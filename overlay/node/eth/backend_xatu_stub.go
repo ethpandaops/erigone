@@ -4,7 +4,6 @@ package eth
 
 import (
 	"github.com/erigontech/erigon/common/log/v3"
-	services "github.com/erigontech/erigon/db/dbservices"
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/execution/chain"
 	"github.com/erigontech/erigon/execution/protocol/rules"
@@ -17,7 +16,7 @@ import (
 func initXatu(
 	_ *node.Node,
 	_ kv.TemporalRoDB,
-	_ services.FullBlockReader,
+	_ xatuBlockReader,
 	_ *chain.Config,
 	_ rules.EngineReader,
 	_ string,

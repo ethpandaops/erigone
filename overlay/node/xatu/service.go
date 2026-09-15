@@ -39,7 +39,6 @@ import (
 
 	"github.com/erigontech/erigon/common/log/v3"
 	"github.com/erigontech/erigon/db/datadir"
-	services "github.com/erigontech/erigon/db/dbservices"
 	"github.com/erigontech/erigon/db/kv"
 	"github.com/erigontech/erigon/execution/chain"
 	"github.com/erigontech/erigon/execution/protocol/rules"
@@ -59,7 +58,7 @@ type Config struct {
 type Service struct {
 	config      Config
 	db          kv.TemporalRoDB
-	blockReader services.FullBlockReader
+	blockReader FullBlockReader
 	chainConfig *chain.Config
 	engine      rules.EngineReader
 	dirs        datadir.Dirs
@@ -96,7 +95,7 @@ type Service struct {
 func New(
 	n *node.Node,
 	db kv.TemporalRoDB,
-	blockReader services.FullBlockReader,
+	blockReader FullBlockReader,
 	chainConfig *chain.Config,
 	engine rules.EngineReader,
 	config Config,
