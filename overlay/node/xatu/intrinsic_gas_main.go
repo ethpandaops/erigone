@@ -29,7 +29,7 @@ func calcIntrinsicGasForTx(txn erigontypes.Transaction, chainRules *chain.Rules,
 		IsEIP3860:          chainRules.IsShanghai,
 		IsEIP7623:          chainRules.IsPrague,
 	})
-	intrinsicGas := intrinsicGasResult.RegularGas
+	intrinsicGas := intrinsicGasResult.ExecutionGas
 
 	if gasSchedule != nil {
 		vmSchedule := gasSchedule.ToVMGasSchedule()

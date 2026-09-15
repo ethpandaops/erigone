@@ -40,9 +40,7 @@ func BuildCustomJumpTable(chainRules *chain.Rules, schedule *CustomGasSchedule) 
 		if !ok {
 			continue // Not a direct opcode name (e.g., SLOAD_COLD)
 		}
-		if jt[opcode] != nil {
-			jt[opcode].SetConstantGas(gas)
-		}
+		setConstantGas(jt, opcode, gas)
 	}
 
 	return jt
