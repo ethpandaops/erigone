@@ -292,14 +292,11 @@ func GasScheduleForRules(rules *chain.Rules) *CustomGasSchedule {
 
 	// Constant gas from JumpTable (valid opcodes for this fork)
 	jt := vm.GetBaseJumpTable(rules)
-	for i := 0; i < 256; i++ {
-		opcode := vm.OpCode(i)
-		if op := jt[opcode]; op != nil {
-			if gas := op.GetConstantGas(); gas > 0 || opcode == vm.STOP || opcode == vm.JUMPDEST {
-				schedule.Overrides[opcode.String()] = gas
-			}
+	constantGasEntries(jt, func(opcode vm.OpCode, gas uint64) {
+		if gas > 0 || opcode == vm.STOP || opcode == vm.JUMPDEST {
+			schedule.Overrides[opcode.String()] = gas
 		}
-	}
+	})
 
 	// Dynamic gas defaults
 	schedule.Overrides[vm.GasKeyMemory] = params.MemoryGas
