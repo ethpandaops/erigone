@@ -94,9 +94,10 @@ jobs:
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
-          # Determine build tags: main gets erigon_main
+          # Determine build tags: the "main" overlay variant needs erigon_main
+          VARIANT=$(./scripts/overlay-variant.sh "${{ matrix.org }}/${{ matrix.repo }}" "$REF")
           BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
-          if [ "$REF" = "main" ]; then
+          if [ "$VARIANT" = "main" ]; then
             BUILD_TAGS="${BUILD_TAGS},erigon_main"
           fi
           echo "build_tags=${BUILD_TAGS}" >> $GITHUB_OUTPUT

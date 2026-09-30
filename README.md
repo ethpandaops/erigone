@@ -19,8 +19,11 @@ erigone/
 │   └── erigontech/erigon/
 │       ├── main/
 │       │   └── base.patch        # Integration patch for main branch
+│       ├── v3.7.0/
+│       │   └── base.patch        # Integration patch for v3.7.0 tag
 │       └── v3.3.10/
-│           └── base.patch        # Integration patch for v3.3.10 tag
+│           ├── base.patch        # Integration patch for v3.3.10 tag
+│           └── variant           # Overlay variant override ("v3")
 ├── ci/
 │   ├── Dockerfile.ethpandaops    # Multi-arch Docker build
 │   └── disable-upstream-workflows.sh
@@ -34,6 +37,7 @@ erigone/
 │   ├── save-patch.sh             # Regenerate patches from modified clone
 │   ├── erigone-build.sh          # Full orchestrator: clone -> patch -> build
 │   ├── update-deps.sh            # go get + go mod tidy (pinned versions)
+│   ├── overlay-variant.sh        # Overlay variant (main/v3) for a patch target
 │   └── validate-patch.sh         # Patch file structural validation
 └── .gitignore                    # Ignore erigon/ working directory
 ```
@@ -47,7 +51,7 @@ erigone/
 ./scripts/erigone-build.sh -r erigontech/erigon -b main
 
 # Full build against a tagged release (stable)
-./scripts/erigone-build.sh -r erigontech/erigon -b v3.3.10
+./scripts/erigone-build.sh -r erigontech/erigon -b v3.7.0
 
 # The binary will be at erigon/build/bin/erigon
 ```
@@ -77,6 +81,7 @@ docker build -f Dockerfile.ethpandaops -t ethpandaops/erigone:latest .
 | `apply-erigone-patch.sh` | Apply patches to an existing erigon clone + copy overlay + deps |
 | `save-patch.sh` | Regenerate patches from a modified erigon clone |
 | `update-deps.sh` | Add erigone-specific Go dependencies via `go get` |
+| `overlay-variant.sh` | Print the overlay variant (`main` or `v3`) of a patch target |
 | `validate-patch.sh` | Validate patch file structure (hunk counts, etc.) |
 | `disable-upstream-workflows.sh` | Rename upstream CI workflows to `.disabled` |
 
@@ -109,10 +114,17 @@ Patches are organized per upstream ref in subdirectories under `patches/org/repo
 ```
 patches/erigontech/erigon/
   main/base.patch       # Patch for main branch
+  v3.7.0/base.patch     # Patch for v3.7.0 tag
   v3.3.10/base.patch    # Patch for v3.3.10 tag
+  v3.3.10/variant       # "v3": build against the pre-3.7 API
 ```
 
 Extension patches (e.g., `01-gas-fix.patch`) can be placed in the same directory and are applied alphabetically after `base.patch`.
+
+Each target builds one of two overlay variants, as reported by `scripts/overlay-variant.sh`:
+
+- `main` (default): copies the `*_main` overlay files and builds with the `erigon_main` tag. Used by `main` and by releases on the current API (v3.7.0).
+- `v3`: copies the `*_v3` overlay files and builds without `erigon_main`. A target opts in with a `variant` file containing `v3` next to its `base.patch` (v3.3.10).
 
 The `-b` flag to build scripts accepts both branch names and tags.
 
@@ -234,7 +246,7 @@ go get github.com/ethpandaops/execution-processor@<new-version>
 
 CI discovers all patch targets automatically from the `patches/` directory structure. Each directory containing a `base.patch` becomes a build target. When the daily CI detects that patches needed a 3-way merge, it auto-commits the updated patches. If patches completely fail, CI fails and you'll need to fix the conflict manually (see [Fixing a patch conflict](#fixing-a-patch-conflict)).
 
-Docker images are tagged with the upstream ref as a suffix (e.g., `erigone:v0.1.0-main`, `erigone:v0.1.0-v3.3.10`). The `main` variant also gets the unqualified `latest` tag.
+Docker images are tagged with the upstream ref as a suffix (e.g., `erigone:v0.1.0-main`, `erigone:v0.1.0-v3.7.0`). The `main` target also gets the unqualified `latest` tag.
 
 ## Requirements
 
