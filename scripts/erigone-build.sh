@@ -230,9 +230,10 @@ fi
 # Build the project
 echo ""
 
-# Determine build tags: main gets erigon_main for build-tagged overlay variants
+# Determine build tags: the "main" overlay variant needs erigon_main
+VARIANT=$("$SCRIPT_DIR/overlay-variant.sh" "$ORG/$REPO" "$BRANCH")
 BUILD_TAGS="embedded,nosqlite,noboltdb,nosilkworm"
-if [ "$BRANCH" = "main" ]; then
+if [ "$VARIANT" = "main" ]; then
     BUILD_TAGS="$BUILD_TAGS,erigon_main"
 fi
 

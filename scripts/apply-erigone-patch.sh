@@ -164,13 +164,15 @@ echo ""
 echo -e "${BLUE}=== Copying overlay files ===${NC}"
 
 # Determine which build-tagged variant files to skip.
-# Files containing _main (e.g. _main.go, _main_test.go) are for main only;
-# files containing _v3 are for non-main only.
-if [ "$BRANCH" = "main" ]; then
+# Files ending in _main (e.g. _main.go, _main_test.go) belong to the "main" variant;
+# files ending in _v3 belong to the "v3" variant.
+VARIANT=$("$REPO_ROOT/scripts/overlay-variant.sh" "$ORG/$REPO" "$BRANCH")
+if [ "$VARIANT" = "main" ]; then
     SKIP_PATTERN="_v3"
 else
     SKIP_PATTERN="_main"
 fi
+echo "Overlay variant: $VARIANT"
 
 # copy_overlay_files copies files from src to dst, skipping variant files
 # that don't match the current build target.
@@ -185,7 +187,7 @@ copy_overlay_files() {
         local stem="${base%.go}"
         stem="${stem%_test}"
         if [[ "$stem" == *"$SKIP_PATTERN" ]]; then
-            echo -e "${YELLOW}  Skipped $base (not for $BRANCH)${NC}"
+            echo -e "${YELLOW}  Skipped $base (not for the $VARIANT variant)${NC}"
             continue
         fi
         cp "$f" "$dst/"
