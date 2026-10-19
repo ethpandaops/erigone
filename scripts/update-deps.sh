@@ -3,6 +3,11 @@
 # Run this from the upstream erigon clone directory after applying patches
 set -e
 
+# gfx.cafe no longer resolves, so its requirement must go once no Go file imports it.
+if ! grep -rqF --include='*.go' 'gfx.cafe/util/go/generic' .; then
+    go mod edit -droprequire=gfx.cafe/util/go/generic
+fi
+
 echo "Adding erigone-specific dependencies..."
 
 go get github.com/ethpandaops/execution-processor@v0.1.7
