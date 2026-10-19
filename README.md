@@ -19,6 +19,8 @@ erigone/
 │   └── erigontech/erigon/
 │       ├── main/
 │       │   └── base.patch        # Integration patch for main branch
+│       ├── v3.7.1/
+│       │   └── base.patch        # Integration patch for v3.7.1 tag
 │       ├── v3.7.0/
 │       │   └── base.patch        # Integration patch for v3.7.0 tag
 │       └── v3.3.10/
@@ -51,7 +53,7 @@ erigone/
 ./scripts/erigone-build.sh -r erigontech/erigon -b main
 
 # Full build against a tagged release (stable)
-./scripts/erigone-build.sh -r erigontech/erigon -b v3.7.0
+./scripts/erigone-build.sh -r erigontech/erigon -b v3.7.1
 
 # The binary will be at erigon/build/bin/erigon
 ```
@@ -114,6 +116,7 @@ Patches are organized per upstream ref in subdirectories under `patches/org/repo
 ```
 patches/erigontech/erigon/
   main/base.patch       # Patch for main branch
+  v3.7.1/base.patch     # Patch for v3.7.1 tag
   v3.7.0/base.patch     # Patch for v3.7.0 tag
   v3.3.10/base.patch    # Patch for v3.3.10 tag
   v3.3.10/variant       # "v3": build against the pre-3.7 API
@@ -123,7 +126,7 @@ Extension patches (e.g., `01-gas-fix.patch`) can be placed in the same directory
 
 Each target builds one of two overlay variants, as reported by `scripts/overlay-variant.sh`:
 
-- `main` (default): copies the `*_main` overlay files and builds with the `erigon_main` tag. Used by `main` and by releases on the current API (v3.7.0).
+- `main` (default): copies the `*_main` overlay files and builds with the `erigon_main` tag. Used by `main` and by releases on the current API (v3.7.0, v3.7.1).
 - `v3`: copies the `*_v3` overlay files and builds without `erigon_main`. A target opts in with a `variant` file containing `v3` next to its `base.patch` (v3.3.10).
 
 The `-b` flag to build scripts accepts both branch names and tags.
