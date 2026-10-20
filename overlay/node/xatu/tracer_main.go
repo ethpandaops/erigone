@@ -89,6 +89,10 @@ type StructLogTracer struct {
 	gasUsed    uint64
 	returnData []byte
 
+	// lastReturnData and lastReturnDataHex hold the most recent return-data buffer and its encoding.
+	lastReturnData    []byte
+	lastReturnDataHex *string
+
 	// pendingIdx tracks the index of the pending (last seen) log at each call depth.
 	// Used to compute GasUsed inline: GasUsed = pendingLog.Gas - currentLog.Gas
 	// Index -1 means no pending log at that depth.
@@ -260,8 +264,7 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 
 	// Capture return data if enabled
 	if t.cfg.EnableReturnData && len(rData) > 0 {
-		returnData := hex.EncodeToString(rData)
-		log.ReturnData = &returnData
+		log.ReturnData = t.encodeReturnData(rData)
 	}
 
 	// Capture refund
@@ -289,6 +292,17 @@ func (t *StructLogTracer) OnOpcode(pc uint64, opcode byte, gas, cost uint64, sco
 			depth:    depth,
 		})
 	}
+}
+
+// encodeReturnData encodes each return-data buffer once; it stays unchanged until the next call returns.
+func (t *StructLogTracer) encodeReturnData(rData []byte) *string {
+	if t.lastReturnDataHex == nil || len(rData) != len(t.lastReturnData) || &rData[0] != &t.lastReturnData[0] {
+		encoded := hex.EncodeToString(rData)
+		t.lastReturnData = rData
+		t.lastReturnDataHex = &encoded
+	}
+
+	return t.lastReturnDataHex
 }
 
 // updatePendingGasUsed updates the GasUsed field for the pending log at the given depth.
