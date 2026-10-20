@@ -26,6 +26,7 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/erigontech/erigon/execution/protocol/mdgas"
 	"github.com/erigontech/erigon/execution/tracing"
 	"github.com/erigontech/erigon/execution/types/accounts"
 	"github.com/erigontech/erigon/execution/vm"
@@ -721,6 +722,7 @@ func newMockOpContext(stackSize int) *mockOpContext {
 
 func (m *mockOpContext) MemoryData() []byte          { return m.memory }
 func (m *mockOpContext) StackData() []uint256.Int    { return m.stack }
+func (m *mockOpContext) Gas() mdgas.MdGas            { return mdgas.MdGas{} }
 func (m *mockOpContext) Caller() accounts.Address    { return m.caller }
 func (m *mockOpContext) Address() accounts.Address   { return m.addr }
 func (m *mockOpContext) CallValue() uint256.Int      { return m.value }
