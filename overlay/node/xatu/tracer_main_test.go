@@ -19,6 +19,9 @@
 package xatu
 
 import (
+	"bytes"
+	"encoding/hex"
+	"runtime"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -514,6 +517,59 @@ func TestMemorySizeCapture_ZeroMemory(t *testing.T) {
 	logs := tracer.StructLogs()
 	if logs[0].MemorySize != 0 {
 		t.Errorf("MemorySize = %d, want 0", logs[0].MemorySize)
+	}
+}
+
+// TestReturnDataEncodedOncePerBuffer verifies that opcodes sharing one return-data buffer share one encoding,
+// so a large buffer followed by many opcodes costs one copy rather than one per opcode.
+func TestReturnDataEncodedOncePerBuffer(t *testing.T) {
+	const (
+		bufferSize = 394464
+		opcodes    = 500
+	)
+
+	first := bytes.Repeat([]byte{0xab}, bufferSize)
+	second := bytes.Repeat([]byte{0xcd}, bufferSize)
+
+	tracer := NewStructLogTracer(StructLogConfig{EnableReturnData: true})
+	ctx := newMockOpContext(10)
+
+	var before, after runtime.MemStats
+
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	for i := 0; i < opcodes; i++ {
+		tracer.OnOpcode(uint64(i), byte(vm.ADD), 100000, 3, ctx, first, 1, nil)
+	}
+
+	runtime.ReadMemStats(&after)
+
+	tracer.OnOpcode(opcodes, byte(vm.ADD), 100000, 3, ctx, second, 1, nil)
+	tracer.OnOpcode(opcodes+1, byte(vm.ADD), 100000, 3, ctx, nil, 1, nil)
+
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 16*bufferSize {
+		t.Errorf("allocated %d bytes for %d opcodes over one %d-byte buffer, want <= %d", allocated, opcodes, bufferSize, 16*bufferSize)
+	}
+
+	logs := tracer.StructLogs()
+	if len(logs) != opcodes+2 {
+		t.Fatalf("expected %d logs, got %d", opcodes+2, len(logs))
+	}
+
+	wantFirst := hex.EncodeToString(first)
+	for i := 0; i < opcodes; i++ {
+		if logs[i].ReturnData == nil || *logs[i].ReturnData != wantFirst {
+			t.Fatalf("log %d: return data does not match the first buffer", i)
+		}
+	}
+
+	if logs[opcodes].ReturnData == nil || *logs[opcodes].ReturnData != hex.EncodeToString(second) {
+		t.Errorf("log %d: return data does not match the second buffer", opcodes)
+	}
+
+	if logs[opcodes+1].ReturnData != nil {
+		t.Errorf("log %d: expected no return data", opcodes+1)
 	}
 }
 
