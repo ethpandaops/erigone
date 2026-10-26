@@ -1,8 +1,8 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index a4b9309..99fae20 100644
+index 79bf497..a6a7c34 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
-@@ -1272,6 +1272,12 @@ var (
+@@ -1276,6 +1276,12 @@ var (
  		Usage: "Suppress background state-aggregator (Domain/Hist/II) file build/merge and E2 block-snapshot retirement goroutines so execution is not perturbed by housekeeping work (legacy env var: NO_BACKGROUND_E3_BUILD=true). Diagnostic / focused-performance-testing use only — NOT an operational setting.",
  		Value: false,
  	}
@@ -15,7 +15,7 @@ index a4b9309..99fae20 100644
  )
  
  var MetricFlags = []cli.Flag{&MetricsEnabledFlag, &MetricsHTTPFlag, &MetricsPortFlag}
-@@ -2066,6 +2072,9 @@ func SetEthConfig(nodeCtx context.Context, ctx *cli.Command, nodeConfig *nodecfg
+@@ -2071,6 +2077,9 @@ func SetEthConfig(nodeCtx context.Context, ctx *cli.Command, nodeConfig *nodecfg
  	cfg.AllowAA = ctx.Bool(AAFlag.Name)
  	cfg.Ethstats = ctx.String(EthStatsURLFlag.Name)
  
@@ -749,10 +749,10 @@ index a47770c..c6b0936 100644
  			_, err := evm.intraBlockState.GetCode(addr)
  			if err != nil {
 diff --git a/node/cli/default_flags.go b/node/cli/default_flags.go
-index a23be1b..b0f1ed0 100644
+index e1b393d..cec1ced 100644
 --- a/node/cli/default_flags.go
 +++ b/node/cli/default_flags.go
-@@ -287,5 +287,7 @@ var DefaultFlags = []cli.Flag{
+@@ -288,5 +288,7 @@ var DefaultFlags = []cli.Flag{
  	&utils.MCPPortFlag,
  
  	&utils.ErigondbDomainStepsInFrozenFileFlag,
@@ -761,7 +761,7 @@ index a23be1b..b0f1ed0 100644
  	&utils.CommitmentPlainValuesFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index ba890a8..9951c59 100644
+index b8fe730..5e8cb0d 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
 @@ -1109,12 +1109,27 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config, chainConfig
