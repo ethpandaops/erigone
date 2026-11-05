@@ -226,6 +226,32 @@ func (t *transactionAdapter) BlobHashes() []execution.Hash {
 	return hashes
 }
 
+// AccessList returns the EIP-2930 access list, or nil if the transaction has none.
+func (t *transactionAdapter) AccessList() []execution.AccessTuple {
+	erigonList := t.tx.GetAccessList()
+	if len(erigonList) == 0 {
+		return nil
+	}
+
+	list := make([]execution.AccessTuple, len(erigonList))
+
+	for i, tuple := range erigonList {
+		keys := make([]execution.Hash, len(tuple.StorageKeys))
+		for j, key := range tuple.StorageKeys {
+			keys[j] = execution.Hash(key)
+		}
+
+		list[i] = execution.AccessTuple{Address: execution.Address(tuple.Address), StorageKeys: keys}
+	}
+
+	return list
+}
+
+// AuthorizationCount returns the number of EIP-7702 set-code authorizations.
+func (t *transactionAdapter) AuthorizationCount() int {
+	return len(t.tx.GetAuthorizations())
+}
+
 // receiptAdapter wraps an Erigon Receipt to implement execution.Receipt.
 type receiptAdapter struct {
 	receipt *erigontypes.Receipt
