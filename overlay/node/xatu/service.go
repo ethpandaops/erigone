@@ -21,12 +21,16 @@ package xatu
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/creasty/defaults"
+	"github.com/ethpandaops/execution-processor/pkg/api"
 	"github.com/ethpandaops/execution-processor/pkg/config"
 	"github.com/ethpandaops/execution-processor/pkg/ethereum"
 	"github.com/ethpandaops/execution-processor/pkg/ethereum/execution"
@@ -82,6 +86,7 @@ type Service struct {
 	manager      *processor.Manager
 	stateManager *state.Manager
 	redisClient  *r.Client
+	apiServer    *http.Server // manual block queue API; nil unless apiAddr is set
 
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -238,6 +243,30 @@ func (s *Service) Start() error {
 		}
 	}()
 
+	// Serve the manual block queue API (POST /api/v1/queue/blocks/{processor}) when apiAddr is set.
+	if cfg.APIAddr != nil {
+		mux := http.NewServeMux()
+		api.NewHandler(fieldLogger.WithField("component", "api"), s.manager, s.pool).RegisterRoutes(mux)
+
+		s.apiServer = &http.Server{
+			Addr:              *cfg.APIAddr,
+			Handler:           mux,
+			ReadHeaderTimeout: 120 * time.Second,
+		}
+
+		s.wg.Add(1)
+
+		go func() {
+			defer s.wg.Done()
+
+			s.log.Info("Starting execution processor API server", "addr", *cfg.APIAddr)
+
+			if err := s.apiServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.log.Error("Execution processor API server error", "err", err)
+			}
+		}()
+	}
+
 	// Mark the embedded node as ready - the DataSource can serve requests immediately.
 	// Processing will naturally only process blocks that exist.
 	if err := s.embeddedNode.MarkReady(ctx); err != nil {
@@ -257,6 +286,15 @@ func (s *Service) Stop() error {
 	}
 
 	ctx := context.Background()
+
+	if s.apiServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		if err := s.apiServer.Shutdown(shutdownCtx); err != nil {
+			s.log.Warn("Failed to stop execution processor API server", "err", err)
+		}
+
+		cancel()
+	}
 
 	if s.manager != nil {
 		if err := s.manager.Stop(ctx); err != nil {
