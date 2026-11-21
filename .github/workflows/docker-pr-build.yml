@@ -31,6 +31,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.discover-targets.outputs.matrix)}}
@@ -120,7 +121,7 @@ jobs:
             const shortSha = '${{ steps.pr_info.outputs.short_sha }}';
             const commitSha = '${{ steps.pr_info.outputs.commit_sha }}';
             const ref = '${{ matrix.ref }}';
-            const dockerRepo = process.env.DOCKER_REPO;
+            const dockerRepo = 'ethpandaops/erigone'; // Docker Hub name; DOCKER_REPO is where the job pushes in GHCR
             const dockerTag = `pr-${prNumber}-${shortSha}-${ref}`;
 
             const comment = `## Docker Image Built (${ref})

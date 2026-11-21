@@ -142,7 +142,7 @@ jobs:
           The erigone image has been published to Docker Hub:
 
           ### Image Tags
-          $(echo "$TAGS" | tr ',' '\n' | sed 's/^/- `/' | sed 's/$/`/')
+          $(echo "$TAGS" | tr ',' '\n' | sed 's|^ghcr\.io/||' | sed 's/^/- `/' | sed 's/$/`/')
 
           ### Build Info
           - **Version**: ${{ steps.meta.outputs.tag }}
