@@ -5,7 +5,7 @@ on:
     types: [labeled, synchronize]
 
 env:
-  DOCKER_REPO: ethpandaops/erigone
+  DOCKER_REPO: ghcr.io/ethpandaops/erigone
 
 jobs:
   discover-targets:
@@ -26,6 +26,12 @@ jobs:
   build-and-push:
     needs: discover-targets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.discover-targets.outputs.matrix)}}
@@ -45,11 +51,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Extract PR information
         id: pr_info
@@ -78,6 +85,7 @@ jobs:
           echo "build_tags=${BUILD_TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push erigone image (multi-arch)
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ./erigon
@@ -95,6 +103,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Attest and mirror to Docker Hub
+        uses: ethpandaops/actions/mirror-image@dab9cb304b6a1dd648e2f1acef6169f7095f515e
+        with:
+          tags: |
+            ${{ env.DOCKER_REPO }}:pr-${{ steps.pr_info.outputs.pr_number }}-${{ steps.pr_info.outputs.short_sha }}-${{ matrix.ref }}
+            ${{ env.DOCKER_REPO }}:${{ steps.pr_info.outputs.commit_sha }}-${{ matrix.ref }}
+          digest: ${{ steps.build.outputs.digest }}
+          mirror-url: ${{ secrets.IMAGE_MIRROR_URL }}
+
       - name: Comment on PR with Docker image info
         uses: actions/github-script@v7
         if: github.event.action == 'labeled'
@@ -104,7 +121,7 @@ jobs:
             const shortSha = '${{ steps.pr_info.outputs.short_sha }}';
             const commitSha = '${{ steps.pr_info.outputs.commit_sha }}';
             const ref = '${{ matrix.ref }}';
-            const dockerRepo = process.env.DOCKER_REPO;
+            const dockerRepo = 'ethpandaops/erigone'; // Docker Hub name; DOCKER_REPO is where the job pushes in GHCR
             const dockerTag = `pr-${prNumber}-${shortSha}-${ref}`;
 
             const comment = `## Docker Image Built (${ref})
