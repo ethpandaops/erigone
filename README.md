@@ -79,6 +79,15 @@ docker build -f Dockerfile.ethpandaops -t ethpandaops/erigone:latest .
 ./erigon/build/bin/erigon --xatu.config /path/to/xatu-config.yaml --chain mainnet
 ```
 
+`--xatu.config` takes an [execution-processor config](https://github.com/ethpandaops/execution-processor#configuration). `${VAR}` and `${VAR:-default}` placeholders in its values are replaced with environment variables after it is parsed, so credentials can be passed in the environment instead of written into the file:
+
+```yaml
+redis:
+  address: "redis://:${REDIS_PASSWORD}@localhost:6379"
+```
+
+Startup fails, naming the variable, if a `${VAR}` without a default is unset or empty. See [Environment Variables](https://github.com/ethpandaops/execution-processor#environment-variables) for the full rules.
+
 ## Scripts
 
 | Script | Purpose |
