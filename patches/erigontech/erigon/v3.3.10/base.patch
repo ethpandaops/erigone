@@ -245,7 +245,7 @@ index 6ad846b..f7c908c 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/state_transition.go b/execution/protocol/state_transition.go
-index ffbfe15..5ecbbba 100644
+index ffbfe15..c4e5b09 100644
 --- a/execution/protocol/state_transition.go
 +++ b/execution/protocol/state_transition.go
 @@ -504,6 +504,12 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (result *
