@@ -53,7 +53,10 @@ func (m *mockIntraBlockState) GetState(accounts.Address, accounts.StorageKey) (u
 	return uint256.Int{}, nil
 }
 func (m *mockIntraBlockState) Exist(accounts.Address) (bool, error) { return false, nil }
-func (m *mockIntraBlockState) GetRefund() uint64                    { return m.refund }
+func (m *mockIntraBlockState) HasSelfdestructed(accounts.Address) (bool, error) {
+	return false, nil
+}
+func (m *mockIntraBlockState) GetRefund() uint64 { return m.refund }
 
 // TestRefundCapture verifies that refund values are captured when OnTxStart
 // is called to initialize the tracer with a VMContext.

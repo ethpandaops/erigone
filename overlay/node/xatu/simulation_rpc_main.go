@@ -448,7 +448,7 @@ func (s *Service) executeSingleTransaction(
 	}
 
 	// Compute tx context
-	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, execChainConfig, txIndex)
+	msg, txCtx, err := computeTxContext(statedb, chainRules, signer, block, txIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}

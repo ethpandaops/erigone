@@ -361,7 +361,7 @@ func (s *Service) DebugTraceTransaction(
 	}
 
 	// Compute tx context
-	msg, txCtx, err := transactions.ComputeTxContext(statedb, s.engine, chainRules, signer, block, execChainConfig, txIndex)
+	msg, txCtx, err := computeTxContext(statedb, chainRules, signer, block, txIndex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute tx context: %w", err)
 	}
@@ -431,6 +431,18 @@ func (s *Service) ClientType() string {
 // IsSynced returns true if the data source is fully synced.
 func (s *Service) IsSynced() bool {
 	return s.synced.Load()
+}
+
+// computeTxContext does what transactions.ComputeTxContext does. Its signature
+// differs between erigon main and the v3.7 and v3.8 releases, which share this file.
+func computeTxContext(statedb *erigonstate.IntraBlockState, chainRules *chain.Rules, signer *erigontypes.Signer, block *erigontypes.Block, txIndex int) (protocol.Message, evmtypes.TxContext, error) {
+	txn := block.Transactions()[txIndex]
+	statedb.SetTxContext(block.NumberU64(), txIndex)
+	msg, err := txn.AsMessage(*signer, block.BaseFee(), chainRules)
+	if err != nil {
+		return nil, evmtypes.TxContext{}, fmt.Errorf("convert transaction at index %d (%s) to message: %w", txIndex, txn.Hash(), err)
+	}
+	return msg, protocol.NewEVMTxContext(msg), nil
 }
 
 // executeWithTracer executes a transaction with the given tracer.

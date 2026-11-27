@@ -37,7 +37,7 @@ func calcIntrinsicGasForTx(txn erigontypes.Transaction, chainRules *chain.Rules,
 			intrinsicGas, _ = vm.CalcCustomIntrinsicGas(
 				vmSchedule, txn.GetData(), accessListLen, storageKeysLen,
 				txn.GetTo() == nil, chainRules.IsHomestead, chainRules.IsIstanbul,
-				chainRules.IsShanghai, chainRules.IsPrague, false, 0,
+				chainRules.IsShanghai, chainRules.IsPrague, 0,
 			)
 		}
 	}

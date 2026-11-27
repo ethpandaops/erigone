@@ -245,7 +245,7 @@ index 95ca56f..7344d2a 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/txn_executor.go b/execution/protocol/txn_executor.go
-index cee4e5d..af82190 100644
+index cee4e5d..32b77b9 100644
 --- a/execution/protocol/txn_executor.go
 +++ b/execution/protocol/txn_executor.go
 @@ -612,6 +612,16 @@ func (st *TxnExecutor) Execute(refunds bool, gasBailout bool) (result *evmtypes.
@@ -258,7 +258,7 @@ index cee4e5d..af82190 100644
 +		rules := st.evm.ChainRules()
 +		vmConfig := st.evm.Config()
 +		isEIP3860 := vmConfig.HasEip3860(rules)
-+		gas, floorGas := vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
++		gas, floorGas := vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, uint64(len(auths)))
 +		intrinsicGasResult = mdgas.IntrinsicGasCalcResult{ExecutionGas: gas, FloorGasCost: floorGas}
 +		overflow = false
 +	}

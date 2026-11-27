@@ -245,7 +245,7 @@ index 6ad846b..f7c908c 100644
 +	return x - y
 +}
 diff --git a/execution/protocol/state_transition.go b/execution/protocol/state_transition.go
-index ffbfe15..5ecbbba 100644
+index ffbfe15..c4e5b09 100644
 --- a/execution/protocol/state_transition.go
 +++ b/execution/protocol/state_transition.go
 @@ -504,6 +504,12 @@ func (st *StateTransition) TransitionDb(refunds bool, gasBailout bool) (result *
@@ -255,7 +255,7 @@ index ffbfe15..5ecbbba 100644
 +
 +	// Xatu: Allow custom intrinsic gas schedule overrides for gas simulation
 +	if st.evm.GasSchedule != nil && st.evm.GasSchedule.HasIntrinsicOverrides() {
-+		gas, floorGas7623 = vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
++		gas, floorGas7623 = vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, uint64(len(auths)))
 +		overflow = false
 +	}
  	if overflow {
