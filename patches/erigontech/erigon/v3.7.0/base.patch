@@ -258,7 +258,7 @@ index cee4e5d..af82190 100644
 +		rules := st.evm.ChainRules()
 +		vmConfig := st.evm.Config()
 +		isEIP3860 := vmConfig.HasEip3860(rules)
-+		gas, floorGas := vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, false, uint64(len(auths)))
++		gas, floorGas := vm.CalcCustomIntrinsicGas(st.evm.GasSchedule, st.data, uint64(len(accessTuples)), uint64(accessTuples.StorageKeys()), contractCreation, rules.IsHomestead, rules.IsIstanbul, isEIP3860, rules.IsPrague, uint64(len(auths)))
 +		intrinsicGasResult = mdgas.IntrinsicGasCalcResult{ExecutionGas: gas, FloorGasCost: floorGas}
 +		overflow = false
 +	}

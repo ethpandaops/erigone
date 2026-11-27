@@ -80,14 +80,12 @@ func CalcCustomIntrinsicGas(
 	data []byte,
 	accessListLen, storageKeysLen uint64,
 	isContractCreation bool,
-	isEIP2, isEIP2028, isEIP3860, isEIP7623, isAATxn bool,
+	isEIP2, isEIP2028, isEIP3860, isEIP7623 bool,
 	authorizationsLen uint64,
 ) (gas uint64, floorGas7623 uint64) {
 	// Set the starting gas for the raw transaction
 	if isContractCreation && isEIP2 {
 		gas = schedule.GetOr(GasKeyTxCreateBase, params.TxGasContractCreation)
-	} else if isAATxn {
-		gas = params.TxAAGas // AA base cost not overridable (niche, can add later)
 	} else {
 		gas = schedule.GetOr(GasKeyTxBase, params.TxGas)
 	}
