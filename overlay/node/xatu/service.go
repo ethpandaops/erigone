@@ -39,7 +39,6 @@ import (
 	"github.com/ethpandaops/execution-processor/pkg/state"
 	r "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 
 	"github.com/erigontech/erigon/common/log/v3"
 	"github.com/erigontech/erigon/db/datadir"
@@ -136,7 +135,7 @@ func loadConfig(file string) (*config.Config, error) {
 
 	type plain config.Config
 
-	if err := yaml.Unmarshal(yamlFile, (*plain)(cfg)); err != nil {
+	if err := config.UnmarshalWithEnv(yamlFile, (*plain)(cfg)); err != nil {
 		return nil, err
 	}
 
