@@ -1,5 +1,5 @@
 diff --git a/cmd/utils/flags.go b/cmd/utils/flags.go
-index 670ba36..0e1de24 100644
+index 793c1cf..631261f 100644
 --- a/cmd/utils/flags.go
 +++ b/cmd/utils/flags.go
 @@ -1292,6 +1292,12 @@ var (
@@ -727,10 +727,10 @@ index 8940a94..d3b8e19 100644
  	&utils.CommitmentPlainValuesFlag,
  }
 diff --git a/node/eth/backend.go b/node/eth/backend.go
-index bffceb5..082b5c1 100644
+index 51527e0..9836a60 100644
 --- a/node/eth/backend.go
 +++ b/node/eth/backend.go
-@@ -1057,8 +1057,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config) error {
+@@ -1060,8 +1060,23 @@ func (s *Ethereum) Init(stack *node.Node, config *ethconfig.Config) error {
  		s.logger.Info("[witness-cache] eager witness cache enabled", "blocks", jsonrpc.WitnessCacheCapacity(httpRpcCfg.WitnessCacheBlocks), "headCapture", headCaptureMode)
  	}
  
